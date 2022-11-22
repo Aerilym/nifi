@@ -649,6 +649,7 @@ public class InvokeHTTP extends AbstractProcessor {
         return PROPERTIES;
     }
 
+    //didnt include in new file
     @Override
     protected PropertyDescriptor getSupportedDynamicPropertyDescriptor(String propertyDescriptorName) {
         if (propertyDescriptorName.startsWith(FORM_DATA_NAME_BASE)) {
@@ -676,6 +677,7 @@ public class InvokeHTTP extends AbstractProcessor {
                 .build();
     }
 
+    //didnt include in new file
     @Override
     public Set<Relationship> getRelationships() {
         return RELATIONSHIPS;
