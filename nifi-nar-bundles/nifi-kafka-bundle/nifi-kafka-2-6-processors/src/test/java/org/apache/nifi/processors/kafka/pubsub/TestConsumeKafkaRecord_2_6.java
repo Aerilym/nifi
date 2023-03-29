@@ -18,6 +18,10 @@ package org.apache.nifi.processors.kafka.pubsub;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.nifi.kafka.shared.property.SaslMechanism;
+import org.apache.nifi.kafka.shared.property.SecurityProtocol;
+import org.apache.nifi.kerberos.KerberosUserService;
+import org.apache.nifi.kerberos.SelfContainedKerberosUserService;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processors.kafka.pubsub.util.MockRecordParser;
@@ -58,7 +62,7 @@ public class TestConsumeKafkaRecord_2_6 {
         };
 
         runner = TestRunners.newTestRunner(proc);
-        runner.setProperty(KafkaProcessorUtils.BOOTSTRAP_SERVERS, "okeydokey:1234");
+        runner.setProperty(ConsumeKafkaRecord_2_6.BOOTSTRAP_SERVERS, "okeydokey:1234");
 
         final String readerId = "record-reader";
         final MockRecordParser readerService = new MockRecordParser();
@@ -77,24 +81,20 @@ public class TestConsumeKafkaRecord_2_6 {
     }
 
     @Test
-    public void validateCustomValidatorSettings() throws Exception {
+    public void validateCustomValidatorSettings() {
         runner.setProperty(ConsumeKafkaRecord_2_6.TOPICS, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
         runner.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         runner.assertValid();
-        runner.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "Foo");
-        runner.assertNotValid();
         runner.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         runner.assertValid();
         runner.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         runner.assertValid();
-        runner.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
-        runner.assertNotValid();
     }
 
     @Test
-    public void validatePropertiesValidation() throws Exception {
+    public void validatePropertiesValidation() {
         runner.setProperty(ConsumeKafkaRecord_2_6.TOPICS, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
@@ -116,7 +116,7 @@ public class TestConsumeKafkaRecord_2_6 {
     }
 
     @Test
-    public void validateGetAllMessages() throws Exception {
+    public void validateGetAllMessages() {
         String groupName = "validateGetAllMessages";
 
         when(mockConsumerPool.obtainConsumer(any(), any())).thenReturn(mockLease);
@@ -138,7 +138,7 @@ public class TestConsumeKafkaRecord_2_6 {
     }
 
     @Test
-    public void validateGetAllMessagesPattern() throws Exception {
+    public void validateGetAllMessagesPattern() {
         String groupName = "validateGetAllMessagesPattern";
 
         when(mockConsumerPool.obtainConsumer(any(), any())).thenReturn(mockLease);
@@ -161,7 +161,7 @@ public class TestConsumeKafkaRecord_2_6 {
     }
 
     @Test
-    public void validateGetErrorMessages() throws Exception {
+    public void validateGetErrorMessages() {
         String groupName = "validateGetErrorMessages";
 
         when(mockConsumerPool.obtainConsumer(any(), any())).thenReturn(mockLease);
@@ -183,24 +183,19 @@ public class TestConsumeKafkaRecord_2_6 {
     }
 
     @Test
-    public void testJaasConfigurationWithDefaultMechanism() {
+    public void testJaasConfigurationWithDefaultMechanism() throws InitializationException {
         runner.setProperty(ConsumeKafkaRecord_2_6.TOPICS, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
 
-        runner.setProperty(KafkaProcessorUtils.SECURITY_PROTOCOL, KafkaProcessorUtils.SEC_SASL_PLAINTEXT);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SECURITY_PROTOCOL, SecurityProtocol.SASL_PLAINTEXT.name());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.JAAS_SERVICE_NAME, "kafka");
+        runner.setProperty(ConsumeKafkaRecord_2_6.KERBEROS_SERVICE_NAME, "kafka");
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.USER_PRINCIPAL, "nifi@APACHE.COM");
-        runner.assertNotValid();
-
-        runner.setProperty(KafkaProcessorUtils.USER_KEYTAB, "not.A.File");
-        runner.assertNotValid();
-
-        runner.setProperty(KafkaProcessorUtils.USER_KEYTAB, "src/test/resources/server.properties");
+        final KerberosUserService kerberosUserService = enableKerberosUserService(runner);
+        runner.setProperty(ConsumeKafka_2_6.SELF_CONTAINED_KERBEROS_USER_SERVICE, kerberosUserService.getIdentifier());
         runner.assertValid();
     }
 
@@ -210,19 +205,19 @@ public class TestConsumeKafkaRecord_2_6 {
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
 
-        runner.setProperty(KafkaProcessorUtils.SECURITY_PROTOCOL, KafkaProcessorUtils.SEC_SASL_PLAINTEXT);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SECURITY_PROTOCOL, SecurityProtocol.SASL_PLAINTEXT.name());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.SASL_MECHANISM, KafkaProcessorUtils.PLAIN_VALUE);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_MECHANISM, SaslMechanism.PLAIN.getValue());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.USERNAME, "user1");
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_USERNAME, "user1");
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.PASSWORD, "password");
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_PASSWORD, "password");
         runner.assertValid();
 
-        runner.removeProperty(KafkaProcessorUtils.USERNAME);
+        runner.removeProperty(ConsumeKafkaRecord_2_6.SASL_USERNAME);
         runner.assertNotValid();
     }
 
@@ -232,19 +227,19 @@ public class TestConsumeKafkaRecord_2_6 {
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
 
-        runner.setProperty(KafkaProcessorUtils.SECURITY_PROTOCOL, KafkaProcessorUtils.SEC_SASL_PLAINTEXT);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SECURITY_PROTOCOL, SecurityProtocol.SASL_PLAINTEXT.name());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.SASL_MECHANISM, KafkaProcessorUtils.SCRAM_SHA256_VALUE);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_MECHANISM, SaslMechanism.SCRAM_SHA_256.getValue());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.USERNAME, "user1");
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_USERNAME, "user1");
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.PASSWORD, "password");
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_PASSWORD, "password");
         runner.assertValid();
 
-        runner.removeProperty(KafkaProcessorUtils.USERNAME);
+        runner.removeProperty(ConsumeKafkaRecord_2_6.SASL_USERNAME);
         runner.assertNotValid();
     }
 
@@ -254,19 +249,19 @@ public class TestConsumeKafkaRecord_2_6 {
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
 
-        runner.setProperty(KafkaProcessorUtils.SECURITY_PROTOCOL, KafkaProcessorUtils.SEC_SASL_PLAINTEXT);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SECURITY_PROTOCOL, SecurityProtocol.SASL_PLAINTEXT.name());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.SASL_MECHANISM, KafkaProcessorUtils.SCRAM_SHA512_VALUE);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_MECHANISM, SaslMechanism.SCRAM_SHA_512.getValue());
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.USERNAME, "user1");
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_USERNAME, "user1");
         runner.assertNotValid();
 
-        runner.setProperty(KafkaProcessorUtils.PASSWORD, "password");
+        runner.setProperty(ConsumeKafkaRecord_2_6.SASL_PASSWORD, "password");
         runner.assertValid();
 
-        runner.removeProperty(KafkaProcessorUtils.USERNAME);
+        runner.removeProperty(ConsumeKafkaRecord_2_6.SASL_USERNAME);
         runner.assertNotValid();
     }
 
@@ -276,8 +271,16 @@ public class TestConsumeKafkaRecord_2_6 {
         runner.setProperty(ConsumeKafkaRecord_2_6.GROUP_ID, "foo");
         runner.setProperty(ConsumeKafkaRecord_2_6.AUTO_OFFSET_RESET, ConsumeKafkaRecord_2_6.OFFSET_EARLIEST);
 
-        runner.setProperty(KafkaProcessorUtils.SECURITY_PROTOCOL, KafkaProcessorUtils.SEC_PLAINTEXT);
+        runner.setProperty(ConsumeKafkaRecord_2_6.SECURITY_PROTOCOL, SecurityProtocol.PLAINTEXT.name());
         runner.assertValid();
+    }
+
+    private SelfContainedKerberosUserService enableKerberosUserService(final TestRunner runner) throws InitializationException {
+        final SelfContainedKerberosUserService kerberosUserService = mock(SelfContainedKerberosUserService.class);
+        when(kerberosUserService.getIdentifier()).thenReturn("userService1");
+        runner.addControllerService(kerberosUserService.getIdentifier(), kerberosUserService);
+        runner.enableControllerService(kerberosUserService);
+        return kerberosUserService;
     }
 
 }

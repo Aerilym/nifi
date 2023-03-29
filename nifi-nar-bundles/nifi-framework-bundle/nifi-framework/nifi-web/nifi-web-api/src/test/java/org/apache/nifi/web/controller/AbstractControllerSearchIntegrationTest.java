@@ -18,6 +18,7 @@ package org.apache.nifi.web.controller;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
+import org.apache.nifi.authorization.Authorizer;
 import org.apache.nifi.authorization.user.NiFiUser;
 import org.apache.nifi.connectable.Connection;
 import org.apache.nifi.connectable.Funnel;
@@ -34,18 +35,22 @@ import org.apache.nifi.parameter.Parameter;
 import org.apache.nifi.parameter.ParameterContext;
 import org.apache.nifi.parameter.ParameterContextManager;
 import org.apache.nifi.parameter.ParameterDescriptor;
+import org.apache.nifi.registry.VariableRegistry;
 import org.apache.nifi.web.api.dto.search.ComponentSearchResultDTO;
 import org.apache.nifi.web.api.dto.search.SearchResultGroupDTO;
 import org.apache.nifi.web.api.dto.search.SearchResultsDTO;
 import org.apache.nifi.web.search.query.RegexSearchQueryParser;
 import org.apache.nifi.web.search.query.SearchQuery;
 import org.apache.nifi.web.search.query.SearchQueryParser;
-import org.junit.Before;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportResource;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -59,8 +64,8 @@ import java.util.function.Function;
 
 import static org.apache.nifi.web.controller.ComponentMockUtil.getRootProcessGroup;
 
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration(locations = {"classpath:nifi-web-api-test-context.xml", "classpath:nifi-web-api-context.xml"})
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = {AbstractControllerSearchIntegrationTest.WebConfiguration.class})
 public abstract class AbstractControllerSearchIntegrationTest {
     protected static final String ROOT_PROCESSOR_GROUP_ID = "3b9a7e60-0172-1000-5f1e-10cbc0c4d5f1";
     protected static final String ROOT_PROCESSOR_GROUP_NAME = "NiFi Flow";
@@ -87,7 +92,7 @@ public abstract class AbstractControllerSearchIntegrationTest {
     @Autowired
     private FlowController flowController;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         resetResults();
         processGroups = new HashSet<>();
@@ -360,6 +365,26 @@ public abstract class AbstractControllerSearchIntegrationTest {
             propertyProvider.forEach(propertySupplier -> stringJoiner.add(Optional.ofNullable(propertySupplier.apply(item)).orElse("N/A").toString()));
 
             return stringJoiner.toString();
+        }
+    }
+
+    @ImportResource({"classpath:nifi-web-api-context.xml"})
+    @Configuration
+    public static class WebConfiguration {
+
+        @Bean
+        public FlowController flowController() {
+            return Mockito.mock(FlowController.class);
+        }
+
+        @Bean
+        public Authorizer authorizer() {
+            return Mockito.mock(Authorizer.class);
+        }
+
+        @Bean
+        public VariableRegistry variableRegistry() {
+            return Mockito.mock(VariableRegistry.class);
         }
     }
 }

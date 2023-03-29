@@ -30,6 +30,8 @@ import org.apache.nifi.annotation.lifecycle.OnConfigurationRestored;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.annotation.lifecycle.OnUnscheduled;
+import org.apache.nifi.annotation.notification.OnPrimaryNodeStateChange;
+import org.apache.nifi.annotation.notification.PrimaryNodeState;
 import org.apache.nifi.authorization.Resource;
 import org.apache.nifi.authorization.resource.Authorizable;
 import org.apache.nifi.authorization.resource.ResourceFactory;
@@ -90,6 +92,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.management.ThreadInfo;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -105,6 +108,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1597,6 +1601,24 @@ public class StandardProcessorNode extends ProcessorNode implements Connectable 
         }
     }
 
+    @Override
+    public void notifyPrimaryNodeChanged(final PrimaryNodeState nodeState, final LifecycleState lifecycleState) {
+        final Class<?> implClass = getProcessor().getClass();
+        final List<Method> methods = ReflectionUtils.findMethodsWithAnnotations(implClass, new Class[] {OnPrimaryNodeStateChange.class});
+        if (methods.isEmpty()) {
+            return;
+        }
+
+        lifecycleState.incrementActiveThreadCount(null);
+        activateThread();
+        try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(getExtensionManager(), implClass, getIdentifier())) {
+            ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnPrimaryNodeStateChange.class, getProcessor(), nodeState);
+        } finally {
+            deactivateThread();
+            lifecycleState.decrementActiveThreadCount();
+        }
+    }
+
     private void activateThread() {
         final Thread thread = Thread.currentThread();
         final Long timestamp = System.currentTimeMillis();
@@ -1799,8 +1821,15 @@ public class StandardProcessorNode extends ProcessorNode implements Connectable 
             return null;
         };
 
-        // Trigger the task in a background thread.
-        final Future<?> taskFuture = schedulingAgentCallback.scheduleTask(startupTask);
+        final Future<?> taskFuture;
+        try {
+            // Trigger the task in a background thread.
+            taskFuture = schedulingAgentCallback.scheduleTask(startupTask);
+        } catch (RejectedExecutionException rejectedExecutionException) {
+            final ValidationState validationState = getValidationState();
+            LOG.error("Unable to start {}.  Last known validation state was {} : {}", this, validationState, validationState.getValidationErrors(), rejectedExecutionException);
+            return;
+        }
 
         // Trigger a task periodically to check if @OnScheduled task completed. Once it has,
         // this task will call SchedulingAgentCallback#onTaskComplete.

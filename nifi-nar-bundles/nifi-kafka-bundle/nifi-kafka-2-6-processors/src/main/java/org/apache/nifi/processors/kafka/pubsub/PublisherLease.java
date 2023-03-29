@@ -32,6 +32,7 @@ import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.components.ConfigVerificationResult.Outcome;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.kafka.shared.property.PublishStrategy;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.schema.access.SchemaNotFoundException;
 import org.apache.nifi.serialization.MalformedRecordException;
@@ -355,7 +356,7 @@ public class PublisherLease implements Closeable {
             }
 
             final Record record = (Record) object;
-            final RecordSchema schema = record.getSchema();
+            final RecordSchema schema = writerFactory.getSchema(flowFile.getAttributes(), record.getSchema());
             try (final ByteArrayOutputStream baos = new ByteArrayOutputStream();
                  final RecordSetWriter writer = writerFactory.createWriter(logger, schema, baos, flowFile)) {
                 writer.write(record);
@@ -430,7 +431,8 @@ public class PublisherLease implements Closeable {
     }
 
     protected void publish(final FlowFile flowFile, final byte[] messageKey, final byte[] messageContent, final String topic, final InFlightMessageTracker tracker, final Integer partition) {
-        publish(flowFile, Collections.emptyList(), messageKey, messageContent, topic, tracker, partition);
+        final List<Header> headers = toHeaders(flowFile, Collections.emptyMap());
+        publish(flowFile, headers, messageKey, messageContent, topic, tracker, partition);
     }
 
     protected void publish(final FlowFile flowFile, final List<Header> headers, final byte[] messageKey, final byte[] messageContent,

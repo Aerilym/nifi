@@ -23,9 +23,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Properties;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class PropertyEncryptorFactoryTest {
     private static final EncryptionMethod ENCRYPTION_METHOD = EncryptionMethod.MD5_256AES;
@@ -33,7 +33,7 @@ public class PropertyEncryptorFactoryTest {
     @Test
     public void testGetPropertyEncryptorUnsupportedEncryptionMethod() {
         final Properties properties = new Properties();
-        properties.setProperty(NiFiProperties.SENSITIVE_PROPS_ALGORITHM, EncryptionMethod.PGP.getAlgorithm());
+        properties.setProperty(NiFiProperties.SENSITIVE_PROPS_ALGORITHM, EncryptionMethod.AES_CBC_NO_PADDING.getAlgorithm());
         properties.setProperty(NiFiProperties.SENSITIVE_PROPS_KEY, String.class.getName());
         final NiFiProperties niFiProperties = NiFiProperties.createBasicNiFiProperties(null, properties);
 

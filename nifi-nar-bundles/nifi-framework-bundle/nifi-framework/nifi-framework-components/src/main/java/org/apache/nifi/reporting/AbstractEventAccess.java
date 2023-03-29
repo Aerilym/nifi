@@ -93,8 +93,9 @@ public abstract class AbstractEventAccess implements EventAccess {
      */
     @Override
     public ProcessGroupStatus getGroupStatus(final String groupId) {
-        final RepositoryStatusReport repoStatusReport = generateRepositoryStatusReport();
-        return getGroupStatus(groupId, repoStatusReport);
+        final RepositoryStatusReport statusReport = generateRepositoryStatusReport();
+        final ProcessGroup group = flowManager.getGroup(groupId);
+        return getGroupStatus(group, statusReport, authorizable -> true, Integer.MAX_VALUE, 1, true);
     }
 
     /**
@@ -110,7 +111,7 @@ public abstract class AbstractEventAccess implements EventAccess {
         final ProcessGroup group = flowManager.getGroup(groupId);
 
         // this was invoked with no user context so the results will be unfiltered... necessary for aggregating status history
-        return getGroupStatus(group, statusReport, authorizable -> true, Integer.MAX_VALUE, 1);
+        return getGroupStatus(group, statusReport, authorizable -> true, Integer.MAX_VALUE, 1, false);
     }
 
     protected RepositoryStatusReport generateRepositoryStatusReport() {
@@ -128,10 +129,11 @@ public abstract class AbstractEventAccess implements EventAccess {
      * @param isAuthorized is authorized check
      * @param recursiveStatusDepth the number of levels deep we should recurse and still include the the processors' statuses, the groups' statuses, etc. in the returned ProcessGroupStatus
      * @param currentDepth the current number of levels deep that we have recursed
+     * @param includeConnectionDetails whether or not to include the details of the connections that may be expensive to calculate and/or require locks be obtained
      * @return the component status
      */
     ProcessGroupStatus getGroupStatus(final ProcessGroup group, final RepositoryStatusReport statusReport, final Predicate<Authorizable> isAuthorized,
-                                      final int recursiveStatusDepth, final int currentDepth) {
+                                      final int recursiveStatusDepth, final int currentDepth, final boolean includeConnectionDetails) {
         if (group == null) {
             return null;
         }
@@ -155,6 +157,7 @@ public abstract class AbstractEventAccess implements EventAccess {
         long bytesSent = 0L;
         int flowFilesTransferred = 0;
         long bytesTransferred = 0;
+        long processingNanos = 0;
 
         final boolean populateChildStatuses = currentDepth <= recursiveStatusDepth;
 
@@ -175,6 +178,8 @@ public abstract class AbstractEventAccess implements EventAccess {
             bytesReceived += procStat.getBytesReceived();
             flowFilesSent += procStat.getFlowFilesSent();
             bytesSent += procStat.getBytesSent();
+
+            processingNanos += procStat.getProcessingNanos();
         }
 
         // set status for local child groups
@@ -183,14 +188,14 @@ public abstract class AbstractEventAccess implements EventAccess {
         for (final ProcessGroup childGroup : group.getProcessGroups()) {
             final ProcessGroupStatus childGroupStatus;
             if (populateChildStatuses) {
-                childGroupStatus = getGroupStatus(childGroup, statusReport, isAuthorized, recursiveStatusDepth, currentDepth + 1);
+                childGroupStatus = getGroupStatus(childGroup, statusReport, isAuthorized, recursiveStatusDepth, currentDepth + 1, includeConnectionDetails);
                 localChildGroupStatusCollection.add(childGroupStatus);
             } else {
                 // In this case, we don't want to include any of the recursive components' individual statuses. As a result, we can
                 // avoid performing any sort of authorizations. Because we only care about the numbers that come back, we can just indicate
                 // that the user is not authorized. This allows us to avoid the expense of both performing the authorization and calculating
                 // things that we would otherwise need to calculate if the user were in fact authorized.
-                childGroupStatus = getGroupStatus(childGroup, statusReport, authorizable -> false, recursiveStatusDepth, currentDepth + 1);
+                childGroupStatus = getGroupStatus(childGroup, statusReport, authorizable -> false, recursiveStatusDepth, currentDepth + 1, includeConnectionDetails);
             }
 
             activeGroupThreads += childGroupStatus.getActiveThreadCount();
@@ -207,6 +212,8 @@ public abstract class AbstractEventAccess implements EventAccess {
 
             flowFilesTransferred += childGroupStatus.getFlowFilesTransferred();
             bytesTransferred += childGroupStatus.getBytesTransferred();
+
+            processingNanos += childGroupStatus.getProcessingNanos();
         }
 
         // set status for remote child groups
@@ -247,9 +254,14 @@ public abstract class AbstractEventAccess implements EventAccess {
             connStatus.setDestinationName(isDestinationAuthorized ? conn.getDestination().getName() : conn.getDestination().getIdentifier());
             connStatus.setBackPressureDataSizeThreshold(conn.getFlowFileQueue().getBackPressureDataSizeThreshold());
             connStatus.setBackPressureObjectThreshold(conn.getFlowFileQueue().getBackPressureObjectThreshold());
-            connStatus.setTotalQueuedDuration(conn.getFlowFileQueue().getTotalQueuedDuration(now));
-            long minLastQueueDate = conn.getFlowFileQueue().getMinLastQueueDate();
-            connStatus.setMaxQueuedDuration(minLastQueueDate == 0 ? 0 : now - minLastQueueDate);
+            if (includeConnectionDetails) {
+                connStatus.setTotalQueuedDuration(conn.getFlowFileQueue().getTotalQueuedDuration(now));
+                long minLastQueueDate = conn.getFlowFileQueue().getMinLastQueueDate();
+                connStatus.setMaxQueuedDuration(minLastQueueDate == 0 ? 0 : now - minLastQueueDate);
+            } else {
+                connStatus.setTotalQueuedDuration(0L);
+                connStatus.setMaxQueuedDuration(0L);
+            }
             connStatus.setFlowFileAvailability(conn.getFlowFileQueue().getFlowFileAvailability());
 
             final FlowFileEvent connectionStatusReport = statusReport.getReportEntry(conn.getIdentifier());
@@ -479,6 +491,7 @@ public abstract class AbstractEventAccess implements EventAccess {
         status.setBytesSent(bytesSent);
         status.setFlowFilesTransferred(flowFilesTransferred);
         status.setBytesTransferred(bytesTransferred);
+        status.setProcessingNanos(processingNanos);
 
         final VersionControlInformation vci = group.getVersionControlInformation();
         if (vci != null) {
@@ -659,7 +672,11 @@ public abstract class AbstractEventAccess implements EventAccess {
      */
     @Override
     public ProcessGroupStatus getControllerStatus() {
-        return getGroupStatus(flowManager.getRootGroupId());
+        final String rootGroupId = flowManager.getRootGroupId();
+        final ProcessGroup group = flowManager.getGroup(rootGroupId);
+        final RepositoryStatusReport statusReport = generateRepositoryStatusReport();
+
+        return getGroupStatus(group, statusReport, authorizable -> true, Integer.MAX_VALUE, 1, true);
     }
 
     @Override

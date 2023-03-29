@@ -96,6 +96,7 @@ import org.apache.nifi.registry.flow.VersionedFlowStatus;
 import org.apache.nifi.registry.flow.diff.ComparableDataFlow;
 import org.apache.nifi.registry.flow.diff.EvolvingDifferenceDescriptor;
 import org.apache.nifi.registry.flow.diff.FlowComparator;
+import org.apache.nifi.registry.flow.diff.FlowComparatorVersionedStrategy;
 import org.apache.nifi.registry.flow.diff.FlowComparison;
 import org.apache.nifi.registry.flow.diff.FlowDifference;
 import org.apache.nifi.registry.flow.diff.StandardComparableDataFlow;
@@ -556,7 +557,7 @@ public final class StandardProcessGroup implements ProcessGroup {
     private void shutdown(final ProcessGroup procGroup) {
         for (final ProcessorNode node : procGroup.getProcessors()) {
             try (final NarCloseable x = NarCloseable.withComponentNarLoader(extensionManager, node.getProcessor().getClass(), node.getIdentifier())) {
-                final StandardProcessContext processContext = new StandardProcessContext(node, controllerServiceProvider, encryptor,
+                final StandardProcessContext processContext = new StandardProcessContext(node, controllerServiceProvider,
                     getStateManager(node.getIdentifier()), () -> false, nodeTypeProvider);
                 ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnShutdown.class, node.getProcessor(), processContext);
             }
@@ -1123,7 +1124,7 @@ public final class StandardProcessGroup implements ProcessGroup {
             }
 
             try (final NarCloseable x = NarCloseable.withComponentNarLoader(extensionManager, processor.getProcessor().getClass(), processor.getIdentifier())) {
-                final StandardProcessContext processContext = new StandardProcessContext(processor, controllerServiceProvider, encryptor,
+                final StandardProcessContext processContext = new StandardProcessContext(processor, controllerServiceProvider,
                     getStateManager(processor.getIdentifier()), () -> false, nodeTypeProvider);
                 ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnRemoved.class, processor.getProcessor(), processContext);
             } catch (final Exception e) {
@@ -3611,6 +3612,7 @@ public final class StandardProcessGroup implements ProcessGroup {
             versionControlInformation.getBucketIdentifier(),
             versionControlInformation.getFlowIdentifier(),
             versionControlInformation.getVersion(),
+            versionControlInformation.getStorageLocation(),
             stripContentsFromRemoteDescendantGroups(versionControlInformation.getFlowSnapshot(), true),
             versionControlInformation.getStatus()) {
 
@@ -3951,7 +3953,7 @@ public final class StandardProcessGroup implements ProcessGroup {
     }
 
     private ProcessContext createProcessContext(final ProcessorNode processorNode) {
-        return new StandardProcessContext(processorNode, controllerServiceProvider, encryptor,
+        return new StandardProcessContext(processorNode, controllerServiceProvider,
             stateManagerProvider.getStateManager(processorNode.getIdentifier()), () -> false, nodeTypeProvider);
     }
 
@@ -4052,7 +4054,7 @@ public final class StandardProcessGroup implements ProcessGroup {
             final ComparableDataFlow snapshotFlow = new StandardComparableDataFlow("Versioned Flow", vci.getFlowSnapshot());
 
             final FlowComparator flowComparator = new StandardFlowComparator(snapshotFlow, currentFlow, getAncestorServiceIds(),
-                new EvolvingDifferenceDescriptor(), encryptor::decrypt, VersionedComponent::getIdentifier);
+                new EvolvingDifferenceDescriptor(), encryptor::decrypt, VersionedComponent::getIdentifier, FlowComparatorVersionedStrategy.SHALLOW);
             final FlowComparison comparison = flowComparator.compare();
             final Set<FlowDifference> differences = comparison.getDifferences().stream()
                 .filter(difference -> !FlowDifferenceFilters.isEnvironmentalChange(difference, versionedGroup, flowManager))
@@ -4073,7 +4075,8 @@ public final class StandardProcessGroup implements ProcessGroup {
             final VersionControlInformation versionControlInfo = getVersionControlInformation();
             if (versionControlInfo != null) {
                 if (!versionControlInfo.getFlowIdentifier().equals(updatedFlow.getMetadata().getFlowIdentifier())) {
-                    throw new IllegalStateException(this + " is under version control but the given flow does not match the flow that this Process Group is synchronized with");
+                    throw new IllegalStateException(this + " is under version control but the given flow does not match the flow that this Process Group is synchronized with. Currently synced to " +
+                        "flow with ID " + versionControlInfo.getFlowIdentifier() + " but proposed flow's metadata shows flow identifier as " + updatedFlow.getMetadata().getFlowIdentifier());
                 }
 
                 if (verifyNotDirty) {

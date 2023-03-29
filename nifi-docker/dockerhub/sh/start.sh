@@ -89,6 +89,10 @@ prop_replace 'nifi.cluster.flow.election.max.wait.time'     "${NIFI_ELECTION_MAX
 prop_replace 'nifi.cluster.flow.election.max.candidates'    "${NIFI_ELECTION_MAX_CANDIDATES:-}"
 prop_replace 'nifi.web.proxy.context.path'                  "${NIFI_WEB_PROXY_CONTEXT_PATH:-}"
 
+# Set leader election and state management properties
+prop_replace 'nifi.cluster.leader.election.implementation'      "${NIFI_LEADER_ELECTION_IMPLEMENTATION:-CuratorLeaderElectionManager}"
+prop_replace 'nifi.state.management.provider.cluster'           "${NIFI_STATE_MANAGEMENT_CLUSTER_PROVIDER:-zk-provider}"
+
 # Set analytics properties
 prop_replace 'nifi.analytics.predict.enabled'                   "${NIFI_ANALYTICS_PREDICT_ENABLED:-false}"
 prop_replace 'nifi.analytics.predict.interval'                  "${NIFI_ANALYTICS_PREDICT_INTERVAL:-3 mins}"
@@ -96,6 +100,13 @@ prop_replace 'nifi.analytics.query.interval'                    "${NIFI_ANALYTIC
 prop_replace 'nifi.analytics.connection.model.implementation'   "${NIFI_ANALYTICS_MODEL_IMPLEMENTATION:-org.apache.nifi.controller.status.analytics.models.OrdinaryLeastSquares}"
 prop_replace 'nifi.analytics.connection.model.score.name'       "${NIFI_ANALYTICS_MODEL_SCORE_NAME:-rSquared}"
 prop_replace 'nifi.analytics.connection.model.score.threshold'  "${NIFI_ANALYTICS_MODEL_SCORE_THRESHOLD:-.90}"
+
+# Add NAR provider properties
+# nifi-registry NAR provider
+if [ -n "${NIFI_NAR_LIBRARY_PROVIDER_NIFI_REGISTRY_URL}" ]; then
+    prop_add_or_replace 'nifi.nar.library.provider.nifi-registry.implementation' 'org.apache.nifi.registry.extension.NiFiRegistryExternalResourceProvider'
+    prop_add_or_replace 'nifi.nar.library.provider.nifi-registry.url' "${NIFI_NAR_LIBRARY_PROVIDER_NIFI_REGISTRY_URL}"
+fi
 
 if [ -n "${NIFI_SENSITIVE_PROPS_KEY}" ]; then
     prop_replace 'nifi.sensitive.props.key' "${NIFI_SENSITIVE_PROPS_KEY}"
@@ -120,6 +131,12 @@ case ${AUTH} in
 
         . "${scripts_dir}/secure.sh"
         . "${scripts_dir}/update_login_providers.sh"
+        ;;
+    oidc)
+        echo 'Enabling OIDC user authentication'
+
+        . "${scripts_dir}/secure.sh"
+        . "${scripts_dir}/update_oidc_properties.sh"
         ;;
 esac
 

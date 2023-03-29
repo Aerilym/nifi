@@ -15,7 +15,7 @@
 -->
 
 <configuration scan="true" scanPeriod="30 seconds">
-    <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook" />
+    <shutdownHook class="ch.qos.logback.core.hook.DefaultShutdownHook" />
 
     <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
         <resetJUL>true</resetJUL>
@@ -113,6 +113,7 @@
     <logger name="org.apache.nifi.controller.reporting.LogComponentStatuses" level="ERROR" />
 
     <logger name="org.apache.calcite.runtime.CalciteException" level="OFF" />
+    <logger name="deprecation" level="OFF" />
 
     <logger name="org.apache.curator.framework.recipes.leader.LeaderSelector" level="OFF" />
     <logger name="org.apache.curator.ConnectionState" level="OFF" />

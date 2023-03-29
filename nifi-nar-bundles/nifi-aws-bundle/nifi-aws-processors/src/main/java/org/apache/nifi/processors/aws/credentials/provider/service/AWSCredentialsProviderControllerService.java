@@ -16,13 +16,7 @@
  */
 package org.apache.nifi.processors.aws.credentials.provider.service;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
+import com.amazonaws.auth.AWSCredentialsProvider;
 import org.apache.nifi.annotation.behavior.Restricted;
 import org.apache.nifi.annotation.behavior.Restriction;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -37,15 +31,23 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors;
 import org.apache.nifi.processors.aws.credentials.provider.factory.CredentialsProviderFactory;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
-import com.amazonaws.auth.AWSCredentialsProvider;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ACCESS_KEY;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_EXTERNAL_ID;
-import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_PROXY_PORT;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_PROXY_HOST;
+import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_PROXY_PORT;
+import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_SSL_CONTEXT_SERVICE;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_STS_ENDPOINT;
+import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_STS_SIGNER_OVERRIDE;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.CREDENTIALS_FILE;
+import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_STS_CUSTOM_SIGNER_CLASS_NAME;
+import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.ASSUME_ROLE_STS_CUSTOM_SIGNER_MODULE_LOCATION;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.PROFILE_NAME;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.SECRET_KEY;
 import static org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors.USE_ANONYMOUS_CREDENTIALS;
@@ -74,8 +76,9 @@ public class AWSCredentialsProviderControllerService extends AbstractControllerS
     public static final PropertyDescriptor ASSUME_ROLE_ARN = CredentialPropertyDescriptors.ASSUME_ROLE_ARN;
     public static final PropertyDescriptor ASSUME_ROLE_NAME = CredentialPropertyDescriptors.ASSUME_ROLE_NAME;
     public static final PropertyDescriptor MAX_SESSION_TIME = CredentialPropertyDescriptors.MAX_SESSION_TIME;
+    public static final PropertyDescriptor ASSUME_ROLE_STS_REGION = CredentialPropertyDescriptors.ASSUME_ROLE_STS_REGION;
 
-    private static final List<PropertyDescriptor> properties;
+    private static final List<PropertyDescriptor> PROPERTIES;
 
     static {
         final List<PropertyDescriptor> props = new ArrayList<>();
@@ -89,23 +92,35 @@ public class AWSCredentialsProviderControllerService extends AbstractControllerS
         props.add(ASSUME_ROLE_NAME);
         props.add(MAX_SESSION_TIME);
         props.add(ASSUME_ROLE_EXTERNAL_ID);
+        props.add(ASSUME_ROLE_SSL_CONTEXT_SERVICE);
         props.add(ASSUME_ROLE_PROXY_HOST);
         props.add(ASSUME_ROLE_PROXY_PORT);
+        props.add(ASSUME_ROLE_STS_REGION);
         props.add(ASSUME_ROLE_STS_ENDPOINT);
-        properties = Collections.unmodifiableList(props);
+        props.add(ASSUME_ROLE_STS_SIGNER_OVERRIDE);
+        props.add(ASSUME_ROLE_STS_CUSTOM_SIGNER_CLASS_NAME);
+        props.add(ASSUME_ROLE_STS_CUSTOM_SIGNER_MODULE_LOCATION);
+        PROPERTIES = Collections.unmodifiableList(props);
     }
 
+    private volatile ConfigurationContext context;
     private volatile AWSCredentialsProvider credentialsProvider;
     protected final CredentialsProviderFactory credentialsProviderFactory = new CredentialsProviderFactory();
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTIES;
     }
 
     @Override
     public AWSCredentialsProvider getCredentialsProvider() throws ProcessException {
         return credentialsProvider;
+    }
+
+    @Override
+    public AwsCredentialsProvider getAwsCredentialsProvider() {
+        // Avoiding instantiation until actually used, in case v1-related configuration is not compatible with v2 clients
+        return credentialsProviderFactory.getAwsCredentialsProvider(context);
     }
 
     @Override
@@ -115,14 +130,9 @@ public class AWSCredentialsProviderControllerService extends AbstractControllerS
 
     @OnEnabled
     public void onConfigured(final ConfigurationContext context) {
-        final Map<PropertyDescriptor, String> evaluatedProperties = new HashMap<>(context.getProperties());
-        evaluatedProperties.keySet().forEach(propertyDescriptor -> {
-            if (propertyDescriptor.isExpressionLanguageSupported()) {
-                evaluatedProperties.put(propertyDescriptor,
-                        context.getProperty(propertyDescriptor).evaluateAttributeExpressions().getValue());
-            }
-        });
-        credentialsProvider = credentialsProviderFactory.getCredentialsProvider(evaluatedProperties);
+        this.context = context;
+
+        credentialsProvider = credentialsProviderFactory.getCredentialsProvider(context);
         getLogger().debug("Using credentials provider: " + credentialsProvider.getClass());
     }
 

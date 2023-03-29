@@ -627,12 +627,6 @@
         <property name="requestReplicator" ref="requestReplicator" />
         <property name="flowController" ref="flowController" />
     </bean>
-    <bean id="oidcResource" class="org.apache.nifi.web.api.OIDCAccessResource" scope="singleton">
-        <property name="oidcService" ref="oidcService"/>
-        <property name="idpUserGroupService" ref="idpUserGroupService" />
-        <property name="properties" ref="nifiProperties"/>
-        <property name="bearerTokenProvider" ref="bearerTokenProvider"/>
-    </bean>
     <bean id="accessPolicyResource" class="org.apache.nifi.web.api.AccessPolicyResource" scope="singleton">
         <constructor-arg ref="serviceFacade"/>
         <constructor-arg ref="authorizer"/>
@@ -707,6 +701,11 @@
         <property name="auditService" ref="auditService"/>
         <property name="processGroupDAO" ref="processGroupDAO"/>
     </bean>
+    <bean id="labelAuditor" class="org.apache.nifi.audit.LabelAuditor">
+        <property name="serviceFacade" ref="serviceFacade"/>
+        <property name="auditService" ref="auditService"/>
+        <property name="processGroupDAO" ref="processGroupDAO"/>
+    </bean>
     <bean id="snippetAuditor" class="org.apache.nifi.audit.SnippetAuditor">
         <property name="serviceFacade" ref="serviceFacade"/>
         <property name="auditService" ref="auditService"/>
@@ -723,6 +722,7 @@
         <property name="processGroupAuditor" ref="processGroupAuditor"/>
         <property name="processorAuditor" ref="processorAuditor"/>
         <property name="relationshipAuditor" ref="relationshipAuditor"/>
+        <property name="labelAuditor" ref="labelAuditor"/>
     </bean>
     <bean id="controllerServiceAuditor" class="org.apache.nifi.audit.ControllerServiceAuditor">
         <property name="serviceFacade" ref="serviceFacade"/>

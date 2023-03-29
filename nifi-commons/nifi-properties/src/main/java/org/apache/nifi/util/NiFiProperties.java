@@ -195,6 +195,7 @@ public class NiFiProperties extends ApplicationProperties {
     public static final String SECURITY_USER_OIDC_CLAIM_IDENTIFYING_USER = "nifi.security.user.oidc.claim.identifying.user";
     public static final String NIFI_SECURITY_USER_OIDC_CLAIM_GROUPS = "nifi.security.user.oidc.claim.groups";
     public static final String SECURITY_USER_OIDC_FALLBACK_CLAIMS_IDENTIFYING_USER = "nifi.security.user.oidc.fallback.claims.identifying.user";
+    public static final String SECURITY_USER_OIDC_TOKEN_REFRESH_WINDOW = "nifi.security.user.oidc.token.refresh.window";
 
     // apache knox
     public static final String SECURITY_USER_KNOX_URL = "nifi.security.user.knox.url";
@@ -252,6 +253,7 @@ public class NiFiProperties extends ApplicationProperties {
     public static final String CLUSTER_PROTOCOL_HEARTBEAT_INTERVAL = "nifi.cluster.protocol.heartbeat.interval";
     public static final String CLUSTER_PROTOCOL_HEARTBEAT_MISSABLE_MAX = "nifi.cluster.protocol.heartbeat.missable.max";
     public static final String CLUSTER_PROTOCOL_IS_SECURE = "nifi.cluster.protocol.is.secure";
+    public static final String CLUSTER_LEADER_ELECTION_IMPLEMENTATION = "nifi.cluster.leader.election.implementation";
 
     // cluster node properties
     public static final String CLUSTER_IS_NODE = "nifi.cluster.is.node";
@@ -277,6 +279,7 @@ public class NiFiProperties extends ApplicationProperties {
     public static final String ZOOKEEPER_CONNECT_TIMEOUT = "nifi.zookeeper.connect.timeout";
     public static final String ZOOKEEPER_SESSION_TIMEOUT = "nifi.zookeeper.session.timeout";
     public static final String ZOOKEEPER_ROOT_NODE = "nifi.zookeeper.root.node";
+    public static final String ZOOKEEPER_CLIENT_ENSEMBLE_TRACKER = "nifi.zookeeper.client.ensembleTracker";
     public static final String ZOOKEEPER_CLIENT_SECURE = "nifi.zookeeper.client.secure";
     public static final String ZOOKEEPER_SECURITY_KEYSTORE = "nifi.zookeeper.security.keystore";
     public static final String ZOOKEEPER_SECURITY_KEYSTORE_TYPE = "nifi.zookeeper.security.keystoreType";
@@ -369,6 +372,7 @@ public class NiFiProperties extends ApplicationProperties {
     public static final String DEFAULT_ZOOKEEPER_SESSION_TIMEOUT = "3 secs";
     public static final String DEFAULT_ZOOKEEPER_ROOT_NODE = "/nifi";
     public static final boolean DEFAULT_ZOOKEEPER_CLIENT_SECURE = false;
+    public static final boolean DEFAULT_ZOOKEEPER_CLIENT_ENSEMBLE_TRACKER = true;
     public static final String DEFAULT_ZOOKEEPER_AUTH_TYPE = "default";
     public static final String DEFAULT_ZOOKEEPER_KERBEROS_REMOVE_HOST_FROM_PRINCIPAL = "true";
     public static final String DEFAULT_ZOOKEEPER_KERBEROS_REMOVE_REALM_FROM_PRINCIPAL = "true";
@@ -382,6 +386,7 @@ public class NiFiProperties extends ApplicationProperties {
     public static final String DEFAULT_SECURITY_USER_OIDC_CONNECT_TIMEOUT = "5 secs";
     public static final String DEFAULT_SECURITY_USER_OIDC_READ_TIMEOUT = "5 secs";
     public static final String DEFAULT_SECURITY_USER_OIDC_TRUSTSTORE_STRATEGY = "JDK";
+    private static final String DEFAULT_SECURITY_USER_OIDC_TOKEN_REFRESH_WINDOW = "60 secs";
     public static final String DEFAULT_SECURITY_USER_SAML_METADATA_SIGNING_ENABLED = "false";
     public static final String DEFAULT_SECURITY_USER_SAML_REQUEST_SIGNING_ENABLED = "false";
     public static final String DEFAULT_SECURITY_USER_SAML_WANT_ASSERTIONS_SIGNED = "true";
@@ -403,6 +408,7 @@ public class NiFiProperties extends ApplicationProperties {
     public static final String DEFAULT_CLUSTER_NODE_READ_TIMEOUT = "5 sec";
     public static final String DEFAULT_CLUSTER_NODE_CONNECTION_TIMEOUT = "5 sec";
     public static final int DEFAULT_CLUSTER_NODE_MAX_CONCURRENT_REQUESTS = 100;
+    public static final String DEFAULT_CLUSTER_LEADER_ELECTION_IMPLEMENTATION = "CuratorLeaderElectionManager";
 
     // cluster node defaults
     public static final int DEFAULT_CLUSTER_NODE_PROTOCOL_THREADS = 10;
@@ -1176,6 +1182,10 @@ public class NiFiProperties extends ApplicationProperties {
         return getProperty(SECURITY_USER_OIDC_TRUSTSTORE_STRATEGY, DEFAULT_SECURITY_USER_OIDC_TRUSTSTORE_STRATEGY);
     }
 
+    public String getOidcTokenRefreshWindow() {
+        return getProperty(SECURITY_USER_OIDC_TOKEN_REFRESH_WINDOW, DEFAULT_SECURITY_USER_OIDC_TOKEN_REFRESH_WINDOW);
+    }
+
     public boolean shouldSendServerVersion() {
         return Boolean.parseBoolean(getProperty(WEB_SHOULD_SEND_SERVER_VERSION, DEFAULT_WEB_SHOULD_SEND_SERVER_VERSION));
     }
@@ -1717,6 +1727,17 @@ public class NiFiProperties extends ApplicationProperties {
         }
 
         return Boolean.parseBoolean(clientSecure);
+    }
+
+    public boolean isZookeeperClientWithEnsembleTracker() {
+        final String defaultValue = String.valueOf(DEFAULT_ZOOKEEPER_CLIENT_ENSEMBLE_TRACKER);
+        final String withEnsembleTracker = getProperty(ZOOKEEPER_CLIENT_ENSEMBLE_TRACKER, defaultValue).trim();
+
+        if (!"true".equalsIgnoreCase(withEnsembleTracker) && !"false".equalsIgnoreCase(withEnsembleTracker)) {
+            throw new RuntimeException(String.format("%s was '%s', expected true or false", NiFiProperties.ZOOKEEPER_CLIENT_ENSEMBLE_TRACKER, withEnsembleTracker));
+        }
+
+        return Boolean.parseBoolean(withEnsembleTracker);
     }
 
     public boolean isZooKeeperTlsConfigurationPresent() {

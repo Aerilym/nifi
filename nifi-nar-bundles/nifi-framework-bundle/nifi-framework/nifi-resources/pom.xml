@@ -18,7 +18,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-framework</artifactId>
-        <version>1.19.0-SNAPSHOT</version>
+        <version>2.0.0-SNAPSHOT</version>
     </parent>
     <artifactId>nifi-resources</artifactId>
     <packaging>pom</packaging>
@@ -171,7 +171,9 @@
         <nifi.security.user.oidc.additional.scopes />
         <nifi.security.user.oidc.claim.identifying.user />
         <nifi.security.user.oidc.fallback.claims.identifying.user />
+        <nifi.security.user.oidc.claim.groups>groups</nifi.security.user.oidc.claim.groups>
         <nifi.security.user.oidc.truststore.strategy>JDK</nifi.security.user.oidc.truststore.strategy>
+        <nifi.security.user.oidc.token.refresh.window>60 secs</nifi.security.user.oidc.token.refresh.window>
 
         <!-- nifi.properties: apache knox -->
         <nifi.security.user.knox.url />
@@ -200,6 +202,7 @@
 
         <!-- nifi.properties: cluster node properties (only configure for cluster nodes) -->
         <nifi.cluster.is.node>false</nifi.cluster.is.node>
+        <nifi.cluster.leader.election.implementation>CuratorLeaderElectionManager</nifi.cluster.leader.election.implementation>
         <nifi.cluster.node.address />
         <nifi.cluster.node.protocol.port />
         <nifi.cluster.node.protocol.max.threads>50</nifi.cluster.node.protocol.max.threads>

@@ -18,6 +18,8 @@ package org.apache.nifi.cdc.mysql.event;
 
 import com.github.shyiko.mysql.binlog.BinaryLogClient;
 import com.github.shyiko.mysql.binlog.event.Event;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +30,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class BinlogEventListener implements BinaryLogClient.EventListener {
 
-    protected final AtomicBoolean stopNow = new AtomicBoolean(false);
+    private static final Logger logger = LoggerFactory.getLogger(BinlogEventListener.class);
+
+    private final AtomicBoolean stopNow = new AtomicBoolean(false);
     private static final int QUEUE_OFFER_TIMEOUT_MSEC = 100;
 
     private final BlockingQueue<RawBinlogEvent> queue;
@@ -49,17 +53,17 @@ public class BinlogEventListener implements BinaryLogClient.EventListener {
 
     @Override
     public void onEvent(Event event) {
-        while (!stopNow.get()) {
-            RawBinlogEvent ep = new RawBinlogEvent(event, client.getBinlogFilename());
-            try {
+        RawBinlogEvent ep = new RawBinlogEvent(event, client.getBinlogFilename());
+        try {
+            while (!stopNow.get()) {
                 if (queue.offer(ep, QUEUE_OFFER_TIMEOUT_MSEC, TimeUnit.MILLISECONDS)) {
                     return;
-                } else {
-                    throw new RuntimeException("Unable to add event to the queue");
                 }
-            } catch (InterruptedException e) {
-                throw new RuntimeException("Interrupted while adding event to the queue");
             }
+
+            logger.info("Stopped while waiting to enqueue event");
+        } catch (InterruptedException e) {
+            logger.warn("Interrupted while adding event to the queue", e);
         }
     }
 }

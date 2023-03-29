@@ -16,14 +16,13 @@
  */
 package org.apache.nifi.processors.aws.credentials.provider.factory.strategies;
 
-import java.util.Map;
-
-import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors;
-
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AnonymousAWSCredentials;
 import com.amazonaws.internal.StaticCredentialsProvider;
+import org.apache.nifi.context.PropertyContext;
+import org.apache.nifi.processors.aws.credentials.provider.factory.CredentialPropertyDescriptors;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
 
 /**
@@ -39,9 +38,14 @@ public class AnonymousCredentialsStrategy extends AbstractBooleanCredentialsStra
     }
 
     @Override
-    public AWSCredentialsProvider getCredentialsProvider(Map<PropertyDescriptor, String> properties) {
-        AnonymousAWSCredentials creds = new AnonymousAWSCredentials();
-        return new StaticCredentialsProvider(creds);
+    public AWSCredentialsProvider getCredentialsProvider(final PropertyContext propertyContext) {
+        AnonymousAWSCredentials credentials = new AnonymousAWSCredentials();
+        return new StaticCredentialsProvider(credentials);
+    }
+
+    @Override
+    public AwsCredentialsProvider getAwsCredentialsProvider(final PropertyContext propertyContext) {
+        return AnonymousCredentialsProvider.create();
     }
 
 }

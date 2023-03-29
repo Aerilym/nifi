@@ -20,17 +20,18 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryOneTime;
 import org.apache.curator.test.InstanceSpec;
-import org.apache.nifi.controller.cluster.SecureClientZooKeeperFactory;
-import org.apache.nifi.controller.cluster.ZooKeeperClientConfig;
+import org.apache.nifi.framework.cluster.zookeeper.SecureClientZooKeeperFactory;
+import org.apache.nifi.framework.cluster.zookeeper.ZooKeeperClientConfig;
 import org.apache.nifi.security.util.CertificateUtils;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.zookeeper.common.ClientX509Util;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ZooKeeperServer;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -51,8 +52,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class ITSecureClientZooKeeperFactory {
 
@@ -74,7 +75,7 @@ public class ITSecureClientZooKeeperFactory {
     private static Path clientTrustStore;
     private static int clientPort;
 
-    @BeforeClass
+    @BeforeAll
     public static void setup() throws IOException, GeneralSecurityException, InterruptedException {
         tempDir = Paths.get("target/TestSecureClientZooKeeperFactory");
         dataDir = tempDir.resolve("state");
@@ -115,7 +116,7 @@ public class ITSecureClientZooKeeperFactory {
         zkServer = serverConnectionFactory.getZooKeeperServer();
     }
 
-    @AfterClass
+    @AfterAll
     public static void cleanup() {
         if (serverConnectionFactory != null) {
             try {
@@ -154,7 +155,8 @@ public class ITSecureClientZooKeeperFactory {
         assertEquals("org.apache.zookeeper.ClientCnxnSocketNetty", SecureClientZooKeeperFactory.NETTY_CLIENT_CNXN_SOCKET);
     }
 
-    @Test(timeout = 30_000)
+    @Test
+    @Timeout(30)
     public void testServerCreatePath() throws Exception {
         final ZooKeeperClientConfig zkClientConfig =
             ZooKeeperClientConfig.createConfig(clientProperties);

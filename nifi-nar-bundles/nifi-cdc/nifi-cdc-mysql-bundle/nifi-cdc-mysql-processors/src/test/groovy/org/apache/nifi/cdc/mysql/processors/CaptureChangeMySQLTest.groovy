@@ -31,10 +31,12 @@ import com.github.shyiko.mysql.binlog.event.WriteRowsEventData
 import com.github.shyiko.mysql.binlog.network.SSLMode
 import groovy.json.JsonSlurper
 import org.apache.commons.io.output.WriterOutputStream
+import org.apache.nifi.annotation.behavior.RequiresInstanceClassLoading
 import org.apache.nifi.cdc.event.ColumnDefinition
 import org.apache.nifi.cdc.event.TableInfo
 import org.apache.nifi.cdc.event.TableInfoCacheKey
 import org.apache.nifi.cdc.event.io.EventWriter
+import org.apache.nifi.cdc.event.io.FlowFileEventWriteStrategy
 import org.apache.nifi.cdc.mysql.MockBinlogClient
 import org.apache.nifi.cdc.mysql.event.BinlogEventInfo
 import org.apache.nifi.cdc.mysql.processors.ssl.BinaryLogSSLSocketFactory
@@ -58,7 +60,6 @@ import org.apache.nifi.util.TestRunner
 import org.apache.nifi.util.TestRunners
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.function.Executable
 
 import javax.net.ssl.SSLContext
 import java.sql.Connection
@@ -72,7 +73,6 @@ import java.util.regex.Pattern
 import static org.junit.jupiter.api.Assertions.assertEquals
 import static org.junit.jupiter.api.Assertions.assertNotNull
 import static org.junit.jupiter.api.Assertions.assertTrue
-import static org.junit.jupiter.api.Assertions.assertThrows
 import static org.mockito.ArgumentMatchers.anyString
 import static org.mockito.Mockito.doReturn
 import static org.mockito.Mockito.mock
@@ -262,6 +262,10 @@ class CaptureChangeMySQLTest {
         def resultFiles = testRunner.getFlowFilesForRelationship(CaptureChangeMySQL.REL_SUCCESS)
         assertEquals(1, resultFiles.size())
         assertEquals('10', resultFiles[0].getAttribute(EventWriter.SEQUENCE_ID_KEY))
+        // Verify the contents of the event includes the database and table name even though the cache is not configured
+        def json = new JsonSlurper().parseText(resultFiles[0].getContent())
+        assertEquals('myDB', json['database'])
+        assertEquals('myTable', json['table_name'])
     }
 
     @Test
@@ -358,7 +362,8 @@ class CaptureChangeMySQLTest {
                 [timestamp: new Date().time, eventType: EventType.XID, nextPosition: 12] as EventHeaderV4,
                 {} as EventData
         ))
-        assertThrows(AssertionError.class, { testRunner.run(1, true, false) } as Executable)
+        // This should not throw an exception, rather warn that a COMMIT event was sent out-of-sync
+        testRunner.run(1, true, false)
     }
 
     @Test
@@ -628,7 +633,8 @@ class CaptureChangeMySQLTest {
                 {} as EventData
         ))
 
-        assertThrows(AssertionError.class, { testRunner.run(1, true, false) } as Executable)
+        // Should not throw an exception
+        testRunner.run(1, true, false)
     }
 
     @Test
@@ -728,6 +734,238 @@ class CaptureChangeMySQLTest {
         def resultFiles = testRunner.getFlowFilesForRelationship(CaptureChangeMySQL.REL_SUCCESS)
         // BEGIN + WRITE + COMMIT from table matching, BEGIN + COMMIT for database matching
         assertEquals(5, resultFiles.size())
+    }
+
+    @Test
+    void testSkipTableMultipleEventsPerFlowFile() throws Exception {
+        testRunner.setProperty(CaptureChangeMySQL.DRIVER_LOCATION, DRIVER_LOCATION)
+        testRunner.setProperty(CaptureChangeMySQL.HOSTS, 'localhost:3306')
+        testRunner.setProperty(CaptureChangeMySQL.USERNAME, 'root')
+        testRunner.setProperty(CaptureChangeMySQL.PASSWORD, 'password')
+        testRunner.setProperty(CaptureChangeMySQL.CONNECT_TIMEOUT, '2 seconds')
+        testRunner.setProperty(CaptureChangeMySQL.DATABASE_NAME_PATTERN, "myDB")
+        testRunner.setProperty(CaptureChangeMySQL.TABLE_NAME_PATTERN, "user")
+        testRunner.setProperty(CaptureChangeMySQL.INCLUDE_BEGIN_COMMIT, 'true')
+        testRunner.setProperty(CaptureChangeMySQL.NUMBER_OF_EVENTS_PER_FLOWFILE, '2')
+
+        testRunner.run(1, false, true)
+
+        // ROTATE
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.ROTATE, nextPosition: 2] as EventHeaderV4,
+                [binlogFilename: 'master.000001', binlogPosition: 4L] as RotateEventData
+        ))
+
+        // BEGIN
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.QUERY, nextPosition: 4] as EventHeaderV4,
+                [database: 'myDB', sql: 'BEGIN'] as QueryEventData
+        ))
+
+        // TABLE MAP for table not matching the regex (note the s on the end of users vs the regex of 'user')
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.TABLE_MAP, nextPosition: 6] as EventHeaderV4,
+                [tableId: 1, database: 'myDB', table: 'users', columnTypes: [4, -4] as byte[]] as TableMapEventData
+        ))
+
+        // This WRITE ROWS should be skipped
+        def cols = new BitSet()
+        cols.set(1)
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.EXT_WRITE_ROWS, nextPosition: 8] as EventHeaderV4,
+                [tableId: 1, includedColumns: cols,
+                 rows   : [[2, 'Smith'] as Serializable[]] as List<Serializable[]>] as WriteRowsEventData
+        ))
+
+        // TABLE MAP for table matching, all modification events (1) should be emitted
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.TABLE_MAP, nextPosition: 10] as EventHeaderV4,
+                [tableId: 1, database: 'myDB', table: 'user', columnTypes: [4, -4] as byte[]] as TableMapEventData
+        ))
+
+        // WRITE ROWS for matching table
+        cols = new BitSet()
+        cols.set(1)
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.EXT_WRITE_ROWS, nextPosition: 12] as EventHeaderV4,
+                [tableId: 1, includedColumns: cols,
+                 rows   : [[10, 'Cruz'] as Serializable[]] as List<Serializable[]>] as WriteRowsEventData
+        ))
+
+        // COMMIT
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.XID, nextPosition: 14] as EventHeaderV4,
+                {} as EventData
+        ))
+
+        ////////////////////////
+        // Test database filter
+        ////////////////////////
+
+        // BEGIN
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.QUERY, nextPosition: 4] as EventHeaderV4,
+                [database: 'myDB', sql: 'BEGIN'] as QueryEventData
+        ))
+
+        // TABLE MAP for database not matching the regex
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.TABLE_MAP, nextPosition: 6] as EventHeaderV4,
+                [tableId: 1, database: 'myDB', table: 'notMyDB', columnTypes: [4, -4] as byte[]] as TableMapEventData
+        ))
+
+        // This WRITE ROWS should be skipped
+        cols = new BitSet()
+        cols.set(1)
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.EXT_WRITE_ROWS, nextPosition: 8] as EventHeaderV4,
+                [tableId: 1, includedColumns: cols,
+                 rows   : [[2, 'Smith'] as Serializable[]] as List<Serializable[]>] as WriteRowsEventData
+        ))
+
+        // COMMIT
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.XID, nextPosition: 14] as EventHeaderV4,
+                {} as EventData
+        ))
+
+        testRunner.run(1, true, false)
+
+        def resultFiles = testRunner.getFlowFilesForRelationship(CaptureChangeMySQL.REL_SUCCESS)
+        // Five events total, 2 max per flow file, so 3 flow files
+        assertEquals(3, resultFiles.size())
+        def json = new JsonSlurper().parseText(new String(resultFiles[0].toByteArray()))
+        assertTrue (json instanceof ArrayList)
+        assertEquals(2, json.size())
+        // BEGIN, INSERT, COMMIT (verifies that one of the INSERTs was skipped)
+        assertEquals('begin', json[0]?.type)
+        assertEquals('insert', json[1]?.type)
+
+        json = new JsonSlurper().parseText(new String(resultFiles[1].toByteArray()))
+        assertTrue (json instanceof ArrayList)
+        assertEquals(2, json.size())
+        assertEquals('commit', json[0]?.type)
+        assertEquals('begin', json[1]?.type)
+
+        json = new JsonSlurper().parseText(new String(resultFiles[2].toByteArray()))
+        assertTrue (json instanceof ArrayList)
+        // One event left
+        assertEquals(1, json.size())
+        assertEquals('commit', json[0]?.type)
+    }
+
+    @Test
+    void testSkipTableOneTransactionPerFlowFile() throws Exception {
+        testRunner.setProperty(CaptureChangeMySQL.DRIVER_LOCATION, DRIVER_LOCATION)
+        testRunner.setProperty(CaptureChangeMySQL.HOSTS, 'localhost:3306')
+        testRunner.setProperty(CaptureChangeMySQL.USERNAME, 'root')
+        testRunner.setProperty(CaptureChangeMySQL.PASSWORD, 'password')
+        testRunner.setProperty(CaptureChangeMySQL.CONNECT_TIMEOUT, '2 seconds')
+        testRunner.setProperty(CaptureChangeMySQL.DATABASE_NAME_PATTERN, "myDB")
+        testRunner.setProperty(CaptureChangeMySQL.TABLE_NAME_PATTERN, "user")
+        testRunner.setProperty(CaptureChangeMySQL.INCLUDE_BEGIN_COMMIT, 'true')
+        testRunner.setProperty(CaptureChangeMySQL.EVENTS_PER_FLOWFILE_STRATEGY, FlowFileEventWriteStrategy.ONE_TRANSACTION_PER_FLOWFILE.name())
+
+        testRunner.run(1, false, true)
+
+        // ROTATE
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.ROTATE, nextPosition: 2] as EventHeaderV4,
+                [binlogFilename: 'master.000001', binlogPosition: 4L] as RotateEventData
+        ))
+
+        // BEGIN
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.QUERY, nextPosition: 4] as EventHeaderV4,
+                [database: 'myDB', sql: 'BEGIN'] as QueryEventData
+        ))
+
+        // TABLE MAP for table not matching the regex (note the s on the end of users vs the regex of 'user')
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.TABLE_MAP, nextPosition: 6] as EventHeaderV4,
+                [tableId: 1, database: 'myDB', table: 'users', columnTypes: [4, -4] as byte[]] as TableMapEventData
+        ))
+
+        // This WRITE ROWS should be skipped
+        def cols = new BitSet()
+        cols.set(1)
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.EXT_WRITE_ROWS, nextPosition: 8] as EventHeaderV4,
+                [tableId: 1, includedColumns: cols,
+                 rows   : [[2, 'Smith'] as Serializable[]] as List<Serializable[]>] as WriteRowsEventData
+        ))
+
+        // TABLE MAP for table matching, all modification events (1) should be emitted
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.TABLE_MAP, nextPosition: 10] as EventHeaderV4,
+                [tableId: 1, database: 'myDB', table: 'user', columnTypes: [4, -4] as byte[]] as TableMapEventData
+        ))
+
+        // WRITE ROWS for matching table
+        cols = new BitSet()
+        cols.set(1)
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.EXT_WRITE_ROWS, nextPosition: 12] as EventHeaderV4,
+                [tableId: 1, includedColumns: cols,
+                 rows   : [[10, 'Cruz'] as Serializable[]] as List<Serializable[]>] as WriteRowsEventData
+        ))
+
+        // COMMIT
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.XID, nextPosition: 14] as EventHeaderV4,
+                {} as EventData
+        ))
+
+        ////////////////////////
+        // Test database filter
+        ////////////////////////
+
+        // BEGIN
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.QUERY, nextPosition: 4] as EventHeaderV4,
+                [database: 'myDB', sql: 'BEGIN'] as QueryEventData
+        ))
+
+        // TABLE MAP for database not matching the regex
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.TABLE_MAP, nextPosition: 6] as EventHeaderV4,
+                [tableId: 1, database: 'myDB', table: 'notMyDB', columnTypes: [4, -4] as byte[]] as TableMapEventData
+        ))
+
+        // This WRITE ROWS should be skipped
+        cols = new BitSet()
+        cols.set(1)
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.EXT_WRITE_ROWS, nextPosition: 8] as EventHeaderV4,
+                [tableId: 1, includedColumns: cols,
+                 rows   : [[2, 'Smith'] as Serializable[]] as List<Serializable[]>] as WriteRowsEventData
+        ))
+
+        // COMMIT
+        client.sendEvent(new Event(
+                [timestamp: new Date().time, eventType: EventType.XID, nextPosition: 14] as EventHeaderV4,
+                {} as EventData
+        ))
+
+        testRunner.run(1, true, false)
+
+        def resultFiles = testRunner.getFlowFilesForRelationship(CaptureChangeMySQL.REL_SUCCESS)
+        // Five events total, 3 max per flow file, so 2 flow files
+        assertEquals(2, resultFiles.size())
+        def json = new JsonSlurper().parseText(new String(resultFiles[0].toByteArray()))
+        assertTrue (json instanceof ArrayList)
+        assertEquals(3, json.size())
+        // BEGIN, INSERT, COMMIT (verifies that one of the INSERTs was skipped)
+        assertEquals('begin', json[0]?.type)
+        assertEquals('insert', json[1]?.type)
+        assertEquals('commit', json[2]?.type)
+
+        json = new JsonSlurper().parseText(new String(resultFiles[1].toByteArray()))
+        assertTrue (json instanceof ArrayList)
+        // Only two events left
+        assertEquals(2, json.size())
+        assertEquals('begin', json[0]?.type)
+        assertEquals('commit', json[1]?.type)
     }
 
     @Test
@@ -868,7 +1106,12 @@ class CaptureChangeMySQLTest {
         testRunner.setProperty(CaptureChangeMySQL.USERNAME, 'root')
         testRunner.setProperty(CaptureChangeMySQL.PASSWORD, 'password')
         testRunner.setProperty(CaptureChangeMySQL.CONNECT_TIMEOUT, '2 seconds')
-
+        final DistributedMapCacheClientImpl cacheClient = createCacheClient()
+        def clientProperties = [:]
+        clientProperties.put(DistributedMapCacheClientService.HOSTNAME.getName(), 'localhost')
+        testRunner.addControllerService('client', cacheClient, clientProperties)
+        testRunner.setProperty(CaptureChangeMySQL.DIST_CACHE_CLIENT, 'client')
+        testRunner.enableControllerService(cacheClient)
         testRunner.run(1, false, true)
 
         // ROTATE
@@ -907,7 +1150,7 @@ class CaptureChangeMySQLTest {
         testRunner.run(1, false, false)
 
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_FILENAME_KEY, 'master.000001', Scope.CLUSTER)
-        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '4', Scope.CLUSTER)
+        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '6', Scope.CLUSTER)
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_GTIDSET_KEY, null, Scope.CLUSTER)
 
         // COMMIT
@@ -931,6 +1174,12 @@ class CaptureChangeMySQLTest {
         testRunner.setProperty(CaptureChangeMySQL.PASSWORD, 'password')
         testRunner.setProperty(CaptureChangeMySQL.CONNECT_TIMEOUT, '2 seconds')
         testRunner.setProperty(CaptureChangeMySQL.USE_BINLOG_GTID, 'true')
+        final DistributedMapCacheClientImpl cacheClient = createCacheClient()
+        def clientProperties = [:]
+        clientProperties.put(DistributedMapCacheClientService.HOSTNAME.getName(), 'localhost')
+        testRunner.addControllerService('client', cacheClient, clientProperties)
+        testRunner.setProperty(CaptureChangeMySQL.DIST_CACHE_CLIENT, 'client')
+        testRunner.enableControllerService(cacheClient)
 
         testRunner.run(1, false, true)
 
@@ -956,7 +1205,7 @@ class CaptureChangeMySQLTest {
 
         // Stop the processor and verify the state is set
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_FILENAME_KEY, '', Scope.CLUSTER)
-        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '-1000', Scope.CLUSTER)
+        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '6', Scope.CLUSTER)
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_GTIDSET_KEY, 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:1-1', Scope.CLUSTER)
 
         ((CaptureChangeMySQL) testRunner.getProcessor()).clearState()
@@ -989,7 +1238,7 @@ class CaptureChangeMySQLTest {
         testRunner.run(1, false, false)
 
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_FILENAME_KEY, '', Scope.CLUSTER)
-        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '-1000', Scope.CLUSTER)
+        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '12', Scope.CLUSTER)
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_GTIDSET_KEY, 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:2-2', Scope.CLUSTER)
 
         // GTID
@@ -1013,7 +1262,7 @@ class CaptureChangeMySQLTest {
         testRunner.run(1, true, false)
 
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_FILENAME_KEY, '', Scope.CLUSTER)
-        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '-1000', Scope.CLUSTER)
+        testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_POSITION_KEY, '18', Scope.CLUSTER)
         testRunner.stateManager.assertStateEquals(BinlogEventInfo.BINLOG_GTIDSET_KEY, 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:2-3', Scope.CLUSTER)
     }
 
@@ -1174,10 +1423,44 @@ class CaptureChangeMySQLTest {
         )
     }
 
+    @Test
+    void testGetXIDEvents() throws Exception {
+        testRunner.setProperty(CaptureChangeMySQL.DRIVER_LOCATION, DRIVER_LOCATION)
+        testRunner.setProperty(CaptureChangeMySQL.HOSTS, "localhost:3306")
+        testRunner.setProperty(CaptureChangeMySQL.USERNAME, "root")
+        testRunner.setProperty(CaptureChangeMySQL.CONNECT_TIMEOUT, "2 seconds")
+        testRunner.setProperty(CaptureChangeMySQL.INCLUDE_BEGIN_COMMIT, "true")
+        final DistributedMapCacheClientImpl cacheClient = createCacheClient()
+        Map<String, String> clientProperties = new HashMap<>()
+        clientProperties.put(DistributedMapCacheClientService.HOSTNAME.getName(), "localhost")
+        testRunner.addControllerService("client", cacheClient, clientProperties)
+        testRunner.setProperty(CaptureChangeMySQL.DIST_CACHE_CLIENT, "client")
+        testRunner.enableControllerService(cacheClient)
+
+        testRunner.run(1, false, true)
+        // COMMIT
+        EventHeaderV4 header2 = new EventHeaderV4()
+        header2.setEventType(EventType.XID)
+        header2.setNextPosition(12)
+        header2.setTimestamp(new Date().getTime())
+        EventData eventData = new EventData() {
+        };
+        client.sendEvent(new Event(header2, eventData))
+
+        // when we ge a xid event without having got a 'begin' event , don't throw an exception, just warn the user
+        testRunner.run(1, false, false)
+    }
+
+    @Test
+    void testNormalizeQuery() throws Exception {
+        assertEquals("alter table", processor.normalizeQuery(" alter table"))
+        assertEquals("alter table", processor.normalizeQuery(" /* This is a \n multiline comment test */ alter table"))
+    }
+
     /********************************
      * Mock and helper classes below
      ********************************/
-
+    @RequiresInstanceClassLoading
     class MockCaptureChangeMySQL extends CaptureChangeMySQL {
 
         Map<TableInfoCacheKey, TableInfo> cache = new HashMap<>()
@@ -1213,8 +1496,8 @@ class CaptureChangeMySQLTest {
             when(mockStatement.executeQuery(anyString())).thenReturn(mockResultSet)
             return mockConnection
         }
-    }
 
+    }
 
     static DistributedMapCacheClientImpl createCacheClient() throws InitializationException {
 

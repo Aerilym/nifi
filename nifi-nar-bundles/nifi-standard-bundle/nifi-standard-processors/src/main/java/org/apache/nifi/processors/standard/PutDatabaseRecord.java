@@ -337,13 +337,12 @@ public class PutDatabaseRecord extends AbstractProcessor {
     static final PropertyDescriptor MAX_BATCH_SIZE = new Builder()
             .name("put-db-record-max-batch-size")
             .displayName("Maximum Batch Size")
-            .description("Specifies maximum batch size for INSERT and UPDATE statements. This parameter has no effect for other statements specified in 'Statement Type'."
-                            + " Zero means the batch size is not limited.")
-            .defaultValue("0")
+            .description("Specifies maximum number of statements to be included in each batch. Zero means the batch size is not limited, "
+                    + "which can cause memory usage issues for a large number of statements.")
+            .defaultValue("1000")
             .required(false)
             .addValidator(StandardValidators.NON_NEGATIVE_INTEGER_VALIDATOR)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
-            .dependsOn(STATEMENT_TYPE, INSERT_TYPE, UPDATE_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH)
             .build();
 
     static final PropertyDescriptor DB_TYPE;
@@ -736,12 +735,20 @@ public class PutDatabaseRecord extends AbstractProcessor {
                             }
                         } else {
                             sqlType = column.getDataType();
+                            // SQLServer returns -150 for sql_variant from DatabaseMetaData though the server expects -156 when setting a sql_variant parameter
+                            if (sqlType == -150) {
+                                sqlType = -156;
+                            }
                         }
 
                         // Convert (if necessary) from field data type to column data type
                         if (fieldSqlType != sqlType) {
                             try {
                                 DataType targetDataType = DataTypeUtils.getDataTypeFromSQLTypeValue(sqlType);
+                                // If sqlType is unsupported, fall back to the fieldSqlType instead
+                                if (targetDataType == null) {
+                                    targetDataType = DataTypeUtils.getDataTypeFromSQLTypeValue(fieldSqlType);
+                                }
                                 if (targetDataType != null) {
                                     if (sqlType == Types.BLOB || sqlType == Types.BINARY) {
                                         if (currentValue instanceof Object[]) {

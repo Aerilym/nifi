@@ -42,9 +42,9 @@ import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.FlowFilePrioritizer;
 import org.apache.nifi.provenance.ProvenanceEventRepository;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -60,12 +60,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -86,7 +87,7 @@ public class TestSocketLoadBalancedFlowFileQueue {
     private List<NodeIdentifier> nodeIds;
     private int nodePort = 4096;
 
-    @Before
+    @BeforeEach
     public void setup() {
         MockFlowFileRecord.resetIdGenerator();
         connection = mock(Connection.class);
@@ -152,9 +153,28 @@ public class TestSocketLoadBalancedFlowFileQueue {
         assertFalse(queue.isEmpty());
         assertSame(FlowFileAvailability.HEAD_OF_QUEUE_PENALIZED, queue.getFlowFileAvailability());
 
+        // Adjust the penalty expiration so that it's not longer penalized.
+        // This will not change the FlowFile Availability, however, because it has already stored the
+        // Penalty expiration date elsewhere. To trigger that to change, we need to add something to the queue
+        // or remove something. We don't want to remove the data yet, so we add a new FlowFile.
         penalizedFlowFile.setPenaltyExpiration(System.currentTimeMillis() - 1);
+        final MockFlowFileRecord readyFlowFile = new MockFlowFileRecord(1);
+        queue.put(readyFlowFile);
+
         assertFalse(queue.isEmpty());
         assertSame(FlowFileAvailability.FLOWFILE_AVAILABLE, queue.getFlowFileAvailability());
+        assertSame(penalizedFlowFile, queue.poll(Collections.emptySet()));
+
+        assertFalse(queue.isEmpty());
+        assertSame(FlowFileAvailability.FLOWFILE_AVAILABLE, queue.getFlowFileAvailability());
+        assertSame(readyFlowFile, queue.poll(Collections.emptySet()));
+
+        assertTrue(queue.isActiveQueueEmpty());
+        assertSame(FlowFileAvailability.ACTIVE_QUEUE_EMPTY, queue.getFlowFileAvailability());
+
+        queue.acknowledge(penalizedFlowFile);
+        queue.acknowledge(readyFlowFile);
+        assertTrue(queue.isEmpty());
     }
 
     @Test
@@ -415,7 +435,8 @@ public class TestSocketLoadBalancedFlowFileQueue {
     }
 
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(10)
     public void testChangeInClusterTopologyTriggersRebalance() throws InterruptedException {
         // Create partitioner that sends first 2 FlowFiles to Partition 0, next 2 to Partition 1, and then next 4 to Partition 3.
         queue.setFlowFilePartitioner(new StaticSequencePartitioner(new int[] {0, 0, 1, 1, 3, 3, 3, 3}, true));
@@ -457,24 +478,25 @@ public class TestSocketLoadBalancedFlowFileQueue {
         final NodeIdentifier node2Identifier = nodeIds.get(1);
 
         // The local node partition starts out first
-        Assert.assertEquals("local", firstPartition.getSwapPartitionName());
+        assertEquals("local", firstPartition.getSwapPartitionName());
 
         // Simulate offloading the first node
         clusterTopologyEventListener.onNodeStateChange(node1Identifier, NodeConnectionState.OFFLOADING);
 
         // Now the remote partition for the second node should be returned
         firstPartition = queue.putAndGetPartition(new MockFlowFileRecord());
-        Assert.assertEquals(node2Identifier, firstPartition.getNodeIdentifier().get());
+        assertEquals(node2Identifier, firstPartition.getNodeIdentifier().get());
 
         // Simulate reconnecting the first node
         clusterTopologyEventListener.onNodeStateChange(node1Identifier, NodeConnectionState.CONNECTED);
 
         // Now the local node partition is returned again
         firstPartition = queue.putAndGetPartition(new MockFlowFileRecord());
-        Assert.assertEquals("local", firstPartition.getSwapPartitionName());
+        assertEquals("local", firstPartition.getSwapPartitionName());
     }
 
-    @Test(timeout = 30000)
+    @Test
+    @Timeout(30)
     public void testChangeInClusterTopologyTriggersRebalanceOnlyOnRemovedNodeIfNecessary() throws InterruptedException {
         // Create partitioner that sends first 1 FlowFile to Partition 0, next to Partition 2, and then next 2 to Partition 2.
         // Then, cycle back to partitions 0 and 1. This will result in partitions 0 & 1 getting 1 FlowFile each and Partition 2
@@ -506,7 +528,8 @@ public class TestSocketLoadBalancedFlowFileQueue {
         }
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(10)
     public void testChangeInPartitionerTriggersRebalance() throws InterruptedException {
         // Create partitioner that sends first 2 FlowFiles to Partition 0, next 2 to Partition 1, and then next 4 to Partition 3.
         queue.setFlowFilePartitioner(new StaticSequencePartitioner(new int[] {0, 1, 0, 1}, false));
@@ -525,7 +548,8 @@ public class TestSocketLoadBalancedFlowFileQueue {
         assertPartitionSizes(expectedPartitionSizes);
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(10)
     public void testDataInRemotePartitionForLocalIdIsMovedToLocalPartition() throws InterruptedException {
         nodeIds.clear();
 
@@ -576,11 +600,7 @@ public class TestSocketLoadBalancedFlowFileQueue {
     private void assertPartitionSizes(final int[] expectedSizes) {
         final int[] partitionSizes = new int[queue.getPartitionCount()];
         while (!Arrays.equals(expectedSizes, partitionSizes)) {
-            try {
-                Thread.sleep(10L);
-            } catch (InterruptedException e) {
-                Assert.fail("Interrupted");
-            }
+            assertDoesNotThrow(() -> Thread.sleep(10L));
 
             for (int i = 0; i < partitionSizes.length; i++) {
                 partitionSizes[i] = queue.getPartition(i).size().getObjectCount();

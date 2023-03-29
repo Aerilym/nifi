@@ -19,16 +19,17 @@ package org.apache.nifi.registry.web.security.authentication.oidc;
 import com.nimbusds.oauth2.sdk.AuthorizationCode;
 import com.nimbusds.oauth2.sdk.AuthorizationCodeGrant;
 import com.nimbusds.oauth2.sdk.id.State;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -38,23 +39,23 @@ public class OidcServiceTest {
     public static final String TEST_REQUEST_IDENTIFIER = "test-request-identifier";
     public static final String TEST_STATE = "test-state";
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testOidcNotEnabledCreateState() throws Exception {
         final OidcService service = getServiceWithNoOidcSupport();
-        service.createState(TEST_REQUEST_IDENTIFIER);
+        assertThrows(IllegalStateException.class, () -> service.createState(TEST_REQUEST_IDENTIFIER));
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testCreateStateMultipleInvocations() throws Exception {
         final OidcService service = getServiceWithOidcSupport();
         service.createState(TEST_REQUEST_IDENTIFIER);
-        service.createState(TEST_REQUEST_IDENTIFIER);
+        assertThrows(IllegalStateException.class, () -> service.createState(TEST_REQUEST_IDENTIFIER));
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testOidcNotEnabledValidateState() throws Exception {
         final OidcService service = getServiceWithNoOidcSupport();
-        service.isStateValid(TEST_REQUEST_IDENTIFIER, new State(TEST_STATE));
+        assertThrows(IllegalStateException.class, () -> service.isStateValid(TEST_REQUEST_IDENTIFIER, new State(TEST_STATE)));
     }
 
     @Test
@@ -80,36 +81,36 @@ public class OidcServiceTest {
         assertFalse(service.isStateValid(TEST_REQUEST_IDENTIFIER, state));
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testOidcNotEnabledExchangeCode() throws Exception {
         final OidcService service = getServiceWithNoOidcSupport();
-        service.exchangeAuthorizationCode(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
+        assertThrows(IllegalStateException.class, () -> service.exchangeAuthorizationCodeForLoginAuthenticationToken(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant()));
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testExchangeCodeMultipleInvocation() throws Exception {
         final OidcService service = getServiceWithOidcSupport();
-        service.exchangeAuthorizationCode(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
-        service.exchangeAuthorizationCode(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
+        service.exchangeAuthorizationCodeForLoginAuthenticationToken(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
+        assertThrows(IllegalStateException.class, () -> service.exchangeAuthorizationCodeForLoginAuthenticationToken(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant()));
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testOidcNotEnabledGetJwt() throws Exception {
         final OidcService service = getServiceWithNoOidcSupport();
-        service.getJwt(TEST_REQUEST_IDENTIFIER);
+        assertThrows(IllegalStateException.class, () -> service.getJwt(TEST_REQUEST_IDENTIFIER));
     }
 
     @Test
     public void testGetJwt() throws Exception {
         final OidcService service = getServiceWithOidcSupport();
-        service.exchangeAuthorizationCode(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
+        service.exchangeAuthorizationCodeForLoginAuthenticationToken(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
         assertNotNull(service.getJwt(TEST_REQUEST_IDENTIFIER));
     }
 
     @Test
     public void testGetJwtExpiration() throws Exception {
         final OidcService service = getServiceWithOidcSupportAndCustomExpiration(1, TimeUnit.SECONDS);
-        service.exchangeAuthorizationCode(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
+        service.exchangeAuthorizationCodeForLoginAuthenticationToken(TEST_REQUEST_IDENTIFIER, getAuthorizationCodeGrant());
 
         Thread.sleep(3 * 1000);
 
@@ -129,7 +130,7 @@ public class OidcServiceTest {
     private OidcService getServiceWithOidcSupport() throws Exception {
         final OidcIdentityProvider provider = mock(OidcIdentityProvider.class);
         when(provider.isOidcEnabled()).thenReturn(true);
-        when(provider.exchangeAuthorizationCode(any())).then(invocation -> UUID.randomUUID().toString());
+        when(provider.exchangeAuthorizationCodeForLoginAuthenticationToken(any())).then(invocation -> UUID.randomUUID().toString());
 
         final OidcService service = new OidcService(provider);
         assertTrue(service.isOidcEnabled());
@@ -140,7 +141,7 @@ public class OidcServiceTest {
     private OidcService getServiceWithOidcSupportAndCustomExpiration(final int duration, final TimeUnit units) throws Exception {
         final OidcIdentityProvider provider = mock(OidcIdentityProvider.class);
         when(provider.isOidcEnabled()).thenReturn(true);
-        when(provider.exchangeAuthorizationCode(any())).then(invocation -> UUID.randomUUID().toString());
+        when(provider.exchangeAuthorizationCodeForLoginAuthenticationToken(any())).then(invocation -> UUID.randomUUID().toString());
 
         final OidcService service = new OidcService(provider, duration, units);
         assertTrue(service.isOidcEnabled());

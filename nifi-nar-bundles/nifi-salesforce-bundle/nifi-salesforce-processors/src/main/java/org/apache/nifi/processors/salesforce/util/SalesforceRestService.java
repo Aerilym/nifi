@@ -17,8 +17,10 @@
 package org.apache.nifi.processors.salesforce.util;
 
 import okhttp3.HttpUrl;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.apache.nifi.processor.exception.ProcessException;
 
@@ -42,7 +44,7 @@ public class SalesforceRestService {
     }
 
     public InputStream describeSObject(String sObject) {
-        String url = baseUrl + "/services/data/v" + version + "/sobjects/" + sObject + "/describe?maxRecords=1";
+        String url = getVersionedBaseUrl() + "/sobjects/" + sObject + "/describe?maxRecords=1";
 
         Request request = new Request.Builder()
                 .addHeader("Authorization", "Bearer " + accessTokenProvider.get())
@@ -54,7 +56,7 @@ public class SalesforceRestService {
     }
 
     public InputStream query(String query) {
-        String url = baseUrl + "/services/data/v" + version + "/query";
+        String url = getVersionedBaseUrl() + "/query";
 
         HttpUrl httpUrl = HttpUrl.get(url).newBuilder()
                 .addQueryParameter("q", query)
@@ -84,11 +86,32 @@ public class SalesforceRestService {
         return request(request);
     }
 
+    public InputStream postRecord(String sObjectApiName, String body) {
+        String url = getVersionedBaseUrl() + "/composite/tree/" + sObjectApiName;
+
+        HttpUrl httpUrl = HttpUrl.get(url).newBuilder()
+                .build();
+
+        final RequestBody requestBody = RequestBody.create(body, MediaType.parse("application/json"));
+
+        Request request = new Request.Builder()
+                .addHeader("Authorization", "Bearer " + accessTokenProvider.get())
+                .url(httpUrl)
+                .post(requestBody)
+                .build();
+
+        return request(request);
+    }
+
+    public String getVersionedBaseUrl() {
+        return baseUrl + "/services/data/v" + version;
+    }
+
     private InputStream request(Request request) {
         Response response = null;
         try {
             response = httpClient.newCall(request).execute();
-            if (response.code() != 200) {
+            if (response.code() < 200 || response.code() > 201) {
                 throw new ProcessException("Invalid response" +
                         " Code: " + response.code() +
                         " Message: " + response.message() +
@@ -96,6 +119,11 @@ public class SalesforceRestService {
                 );
             }
             return response.body().byteStream();
+        } catch (ProcessException e) {
+            if (response != null) {
+                response.close();
+            }
+            throw e;
         } catch (Exception e) {
             if (response != null) {
                 response.close();

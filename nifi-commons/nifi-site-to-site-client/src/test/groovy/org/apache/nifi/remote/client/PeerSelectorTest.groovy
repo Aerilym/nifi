@@ -16,24 +16,24 @@
  */
 package org.apache.nifi.remote.client
 
-
 import org.apache.nifi.remote.PeerDescription
 import org.apache.nifi.remote.PeerStatus
 import org.apache.nifi.remote.TransferDirection
 import org.apache.nifi.remote.protocol.SiteToSiteTransportProtocol
 import org.apache.nifi.remote.util.PeerStatusCache
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import java.security.Security
 import java.util.concurrent.ArrayBlockingQueue
 
-class PeerSelectorTest extends GroovyTestCase {
+import static org.junit.jupiter.api.Assertions.assertEquals
+import static org.junit.jupiter.api.Assertions.assertNotNull
+import static org.junit.jupiter.api.Assertions.assertNull
+import static org.junit.jupiter.api.Assertions.assertTrue
+
+class PeerSelectorTest {
     private static final Logger logger = LoggerFactory.getLogger(PeerSelectorTest.class)
 
     private static final BOOTSTRAP_PEER_DESCRIPTION = new PeerDescription("localhost", -1, false)
@@ -47,26 +47,11 @@ class PeerSelectorTest extends GroovyTestCase {
     private static mockPSP
     private static mockPP
 
-
-    @BeforeAll
-    static void setUpOnce() throws Exception {
-        Security.addProvider(new BouncyCastleProvider())
-
-        logger.metaClass.methodMissing = { String name, args ->
-            logger.info("[${name?.toUpperCase()}] ${(args as List).join(" ")}")
-        }
-    }
-
     @BeforeEach
     void setUp() {
         // Mock collaborators
         mockPSP = mockPeerStatusProvider()
         mockPP = mockPeerPersistence()
-    }
-
-    @AfterEach
-    void tearDown() {
-
     }
 
     private static String buildRemoteInstanceUris(List<String> nodes = DEFAULT_NODES) {
@@ -135,7 +120,7 @@ class PeerSelectorTest extends GroovyTestCase {
                                                       final Map<String, Double> EXPECTED_PERCENTS,
                                                       final int NUM_TIMES = resultsFrequency.values().sum() as int,
                                                       final double TOLERANCE = 0.05) {
-        assert resultsFrequency.keySet() == EXPECTED_PERCENTS.keySet()
+        assertEquals(EXPECTED_PERCENTS.keySet(), resultsFrequency.keySet())
 
         logger.info("  Actual results: ${resultsFrequency.sort()}")
         logger.info("Expected results: ${EXPECTED_PERCENTS.sort().collect { k, v -> "${k}: ${v}%" }}")
@@ -154,7 +139,7 @@ class PeerSelectorTest extends GroovyTestCase {
             def count = resultsFrequency[k]
             def difference = Math.abs(expectedCount - count) / NUM_TIMES
             logger.debug("Checking that ${count} is within ±${TOLERANCE * 100}% of ${expectedCount} (${lowerBound}, ${upperBound}) | ${(difference * 100).round(2)}%")
-            assert count >= lowerBound && count <= upperBound
+            assertTrue(count >= lowerBound && count <= upperBound)
         }
     }
 
@@ -169,7 +154,7 @@ class PeerSelectorTest extends GroovyTestCase {
         int consecutiveElements = recentPeerSelectionQueue.getMaxConsecutiveElements()
 //        String mcce = recentPeerSelectionQueue.getMostCommonConsecutiveElement()
 //        logger.debug("Most consecutive elements in recentPeerSelectionQueue: ${consecutiveElements} - ${mcce} | ${recentPeerSelectionQueue}")
-        assert consecutiveElements <= recentPeerSelectionQueue.totalSize - 1
+        assertTrue(consecutiveElements <= recentPeerSelectionQueue.totalSize - 1)
     }
 
     private static double calculateMean(Map resultsFrequency) {
@@ -179,7 +164,9 @@ class PeerSelectorTest extends GroovyTestCase {
         return meanElements.sum() / meanElements.size()
     }
 
-    private static PeerStatusProvider mockPeerStatusProvider(PeerDescription bootstrapPeerDescription = BOOTSTRAP_PEER_DESCRIPTION, String remoteInstanceUris = DEFAULT_REMOTE_INSTANCE_URIS, Map<PeerDescription, Set<PeerStatus>> peersMap = DEFAULT_PEER_NODES) {
+    private static PeerStatusProvider mockPeerStatusProvider(PeerDescription bootstrapPeerDescription = BOOTSTRAP_PEER_DESCRIPTION,
+                                                             String remoteInstanceUris = DEFAULT_REMOTE_INSTANCE_URIS,
+                                                             Map<PeerDescription, Set<PeerStatus>> peersMap = DEFAULT_PEER_NODES) {
         [getTransportProtocol       : { ->
             SiteToSiteTransportProtocol.HTTP
         },
@@ -199,7 +186,6 @@ class PeerSelectorTest extends GroovyTestCase {
             new PeerStatusCache(peerStatuses, System.currentTimeMillis(), remoteInstanceUris, SiteToSiteTransportProtocol.HTTP)
         },
          save   : { PeerStatusCache psc ->
-             logger.mock("Persisting PeerStatusCache: ${psc}")
          }] as PeerPersistence
     }
 
@@ -230,8 +216,8 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Retrieved ${peersToQuery.size()} peers to query: ${peersToQuery}")
 
         // Assert
-        assert peersToQuery.size() == 1
-        assert peersToQuery.first() == BOOTSTRAP_PEER_DESCRIPTION
+        assertEquals(1, peersToQuery.size())
+        assertEquals(BOOTSTRAP_PEER_DESCRIPTION, peersToQuery.first())
     }
 
     @Test
@@ -249,9 +235,9 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Retrieved ${peersToQuery.size()} peers to query: ${peersToQuery}")
 
         // Assert
-        assert peersToQuery.size() == restoredPeerStatuses.size() + 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
-        assert peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS)
+        assertEquals(restoredPeerStatuses.size() + 1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
+        assertTrue(peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS))
     }
 
     /**
@@ -275,11 +261,11 @@ class PeerSelectorTest extends GroovyTestCase {
         }
 
         // Assert
-        assert peersToQuery.size() == DEFAULT_PEER_STATUSES.size() + 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
-        assert peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS)
+        assertEquals(DEFAULT_PEER_STATUSES.size() + 1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
+        assertTrue(peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS))
 
-        assert repeatedPeersToQuery.every { it == peersToQuery }
+        repeatedPeersToQuery.forEach(query -> assertEquals(peersToQuery, query))
     }
 
     @Test
@@ -292,8 +278,8 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Retrieved ${remotePeerStatuses.size()} peer statuses: ${remotePeerStatuses}")
 
         // Assert
-        assert remotePeerStatuses.size() == DEFAULT_PEER_STATUSES.size()
-        assert remotePeerStatuses.containsAll(DEFAULT_PEER_STATUSES)
+        assertEquals(DEFAULT_PEER_STATUSES.size(), remotePeerStatuses.size())
+        assertTrue(remotePeerStatuses.containsAll(DEFAULT_PEER_STATUSES))
     }
 
     /**
@@ -339,10 +325,10 @@ class PeerSelectorTest extends GroovyTestCase {
                 }
 
                 // Assert that the send percentage is always between 0% and 80%
-                assert r.every { k, v -> v.send >= 0 && v.send <= 80 }
+                r.every { k, v -> assertTrue(v.send >= 0 && v.send <= 80) }
 
                 // Assert that the receive percentage is always between 0% and 100%
-                assert r.every { k, v -> v.receive >= 0 && v.receive <= 100 }
+                r.every { k, v -> assertTrue(v.receive >= 0 && v.receive <= 100) }
             }
         }
     }
@@ -365,8 +351,8 @@ class PeerSelectorTest extends GroovyTestCase {
                 double receiveWeight = PeerSelector.calculateNormalizedWeight(TransferDirection.RECEIVE, totalFlowfileCount, flowfileCount, NODE_COUNT)
 
                 // Assert
-                assert sendWeight == 100
-                assert receiveWeight == 100
+                assertEquals(100, sendWeight)
+                assertEquals(100, receiveWeight)
             }
         }
     }
@@ -392,7 +378,7 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Weighted peer map: ${weightedPeerMap}")
 
         // Assert
-        assert new ArrayList<>(weightedPeerMap.keySet()) == new ArrayList(clusterMap.keySet())
+        assertEquals(clusterMap.keySet(), weightedPeerMap.keySet())
     }
 
     @Test
@@ -416,7 +402,7 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Weighted peer map: ${weightedPeerMap}")
 
         // Assert
-        assert new ArrayList<>(weightedPeerMap.keySet()) == new ArrayList(clusterMap.keySet())
+        assertEquals(clusterMap.keySet(), weightedPeerMap.keySet())
     }
 
     /**
@@ -450,11 +436,11 @@ class PeerSelectorTest extends GroovyTestCase {
                 logger.info("Destination map: ${destinationMap}")
 
                 // Assert
-                assert destinationMap.keySet() == peerStatuses
+                assertEquals(peerStatuses, destinationMap.keySet())
 
                 // For uneven splits, the resulting percentage should be within +/- 1%
                 def totalPercentage = destinationMap.values().sum()
-                assert totalPercentage >= 99 && totalPercentage <= 100
+                assertTrue(totalPercentage >= 99 && totalPercentage <= 100)
             }
         }
     }
@@ -603,7 +589,7 @@ class PeerSelectorTest extends GroovyTestCase {
                     // Spot check consecutive selection
                     if (i % 10 == 0) {
                         int consecutiveElements = lastN.getMaxConsecutiveElements()
-                        assert consecutiveElements == lastN.size()
+                        assertEquals(lastN.size(), consecutiveElements)
                     }
                 }
 
@@ -784,7 +770,8 @@ class PeerSelectorTest extends GroovyTestCase {
         cacheFile.deleteOnExit()
 
         // Construct the cache contents and write to disk
-        final String CACHE_CONTENTS = "${mockPSP.getTransportProtocol()}\n" + "${AbstractPeerPersistence.REMOTE_INSTANCE_URIS_PREFIX}${mockPSP.getRemoteInstanceUris()}\n" + peerStatuses.collect { PeerStatus ps ->
+        final String CACHE_CONTENTS = "${mockPSP.getTransportProtocol()}\n" +
+                "${AbstractPeerPersistence.REMOTE_INSTANCE_URIS_PREFIX}${mockPSP.getRemoteInstanceUris()}\n" + peerStatuses.collect { PeerStatus ps ->
             [ps.peerDescription.hostname, ps.peerDescription.port, ps.peerDescription.isSecure(), ps.isQueryForPeers()].join(":")
         }.join("\n")
         cacheFile.text = CACHE_CONTENTS
@@ -801,9 +788,9 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Retrieved ${peersToQuery.size()} peers to query: ${peersToQuery}")
 
         // Assert
-        assert peersToQuery.size() == nodes.size() + 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
-        assert peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS)
+        assertEquals(nodes.size() + 1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
+        assertTrue(peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS))
     }
 
     /**
@@ -824,7 +811,8 @@ class PeerSelectorTest extends GroovyTestCase {
         cacheFile.deleteOnExit()
 
         // Construct the cache contents and write to disk
-        final String CACHE_CONTENTS = "${mockPSP.getTransportProtocol()}\n" + "${AbstractPeerPersistence.REMOTE_INSTANCE_URIS_PREFIX}${mockPSP.getRemoteInstanceUris()}\n" + peerStatuses.collect { PeerStatus ps ->
+        final String CACHE_CONTENTS = "${mockPSP.getTransportProtocol()}\n" +
+                "${AbstractPeerPersistence.REMOTE_INSTANCE_URIS_PREFIX}${mockPSP.getRemoteInstanceUris()}\n" + peerStatuses.collect { PeerStatus ps ->
             [ps.peerDescription.hostname, ps.peerDescription.port, ps.peerDescription.isSecure(), ps.isQueryForPeers()].join(":")
         }.join("\n")
         cacheFile.text = CACHE_CONTENTS
@@ -842,16 +830,16 @@ class PeerSelectorTest extends GroovyTestCase {
         // Assert
 
         // The loaded cache should be marked as expired and not used
-        assert ps.isCacheExpired(ps.peerStatusCache)
+        assertTrue(ps.isCacheExpired(ps.peerStatusCache))
 
         // This internal method does not refresh or check expiration
         def peersToQuery = ps.getPeersToQuery()
         logger.info("Retrieved ${peersToQuery.size()} peers to query: ${peersToQuery}")
 
         // The cache has (expired) peer statuses present
-        assert peersToQuery.size() == nodes.size() + 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
-        assert peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS)
+        assertEquals(nodes.size() + 1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
+        assertTrue(peersToQuery.containsAll(DEFAULT_PEER_DESCRIPTIONS))
 
         // Trigger the cache expiration detection
         ps.refresh()
@@ -860,8 +848,8 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("After cache expiration, retrieved ${peersToQuery.size()} peers to query: ${peersToQuery}")
 
         // The cache only contains the bootstrap node
-        assert peersToQuery.size() == 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
+        assertEquals(1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
     }
 
     Throwable generateException(String message, int nestedLevel = 0) {
@@ -895,8 +883,8 @@ class PeerSelectorTest extends GroovyTestCase {
         def peersToQuery = ps.getPeersToQuery()
 
         // Assert
-        assert peersToQuery.size() == 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
+        assertEquals(1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
     }
 
     /**
@@ -931,8 +919,8 @@ class PeerSelectorTest extends GroovyTestCase {
         logger.info("Retrieved ${peersToQuery.size()} peers to query: ${peersToQuery}")
 
         // Assert
-        assert peersToQuery.size() == 1
-        assert peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION)
+        assertEquals(1, peersToQuery.size())
+        assertTrue(peersToQuery.contains(BOOTSTRAP_PEER_DESCRIPTION))
     }
 
     /**
@@ -976,8 +964,6 @@ class PeerSelectorTest extends GroovyTestCase {
                     bootstrapDescription
                 },
                 fetchRemotePeerStatuses    : { PeerDescription pd ->
-                    // Depending on the scenario, return given peer statuses
-                    logger.mock("Scenario ${currentAttempt} fetchRemotePeerStatus for ${pd}")
                     switch (currentAttempt) {
                         case 1:
                             return [bootstrapStatus, node2Status] as Set<PeerStatus>
@@ -998,7 +984,7 @@ class PeerSelectorTest extends GroovyTestCase {
         ps.refresh()
         PeerStatus peerStatus = ps.getNextPeerStatus(TransferDirection.RECEIVE)
         logger.info("Attempt ${currentAttempt} - ${peerStatus}")
-        assert peerStatus
+        assertNotNull(peerStatus)
 
         // Force the selector to refresh the cache
         currentAttempt++
@@ -1009,7 +995,7 @@ class PeerSelectorTest extends GroovyTestCase {
             ps.refresh()
             peerStatus = ps.getNextPeerStatus(TransferDirection.RECEIVE)
             logger.info("Attempt ${currentAttempt} - ${peerStatus}")
-            assert peerStatus == node2Status
+            assertEquals(node2Status, peerStatus)
 
             // Force the selector to refresh the cache
             currentAttempt++
@@ -1020,7 +1006,7 @@ class PeerSelectorTest extends GroovyTestCase {
         ps.refresh()
         peerStatus = ps.getNextPeerStatus(TransferDirection.RECEIVE)
         logger.info("Attempt ${currentAttempt} - ${peerStatus}")
-        assert !peerStatus
+        assertNull(peerStatus)
 
         // Force the selector to refresh the cache
         currentAttempt = 5
@@ -1030,7 +1016,7 @@ class PeerSelectorTest extends GroovyTestCase {
         ps.refresh()
         peerStatus = ps.getNextPeerStatus(TransferDirection.RECEIVE)
         logger.info("Attempt ${currentAttempt} - ${peerStatus}")
-        assert peerStatus == bootstrapStatus
+        assertEquals(bootstrapStatus, peerStatus)
     }
 
     // PeerQueue definition and tests
@@ -1052,7 +1038,7 @@ class PeerSelectorTest extends GroovyTestCase {
             peerQueue.append(nodes.first())
 
             // Assert
-            assert peerQueue.getMaxConsecutiveElements() == peerQueue.size()
+            assertEquals(peerQueue.size(), peerQueue.getMaxConsecutiveElements())
         }
 
         // Never repeating node
@@ -1061,7 +1047,7 @@ class PeerSelectorTest extends GroovyTestCase {
             peerQueue.append(nodes.get(i % peerStatuses.size()))
 
             // Assert
-            assert peerQueue.getMaxConsecutiveElements() == 1
+            assertEquals(1, peerQueue.getMaxConsecutiveElements())
         }
 
         // Repeat up to nodes.size() times but no more
@@ -1072,7 +1058,7 @@ class PeerSelectorTest extends GroovyTestCase {
 
             // Assert
 //            logger.debug("Most consecutive elements in queue: ${peerQueue.getMaxConsecutiveElements()} | ${peerQueue}")
-            assert peerQueue.getMaxConsecutiveElements() <= peerStatuses.size()
+            assertTrue(peerQueue.getMaxConsecutiveElements() <= peerStatuses.size())
         }
     }
 

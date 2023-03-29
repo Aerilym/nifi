@@ -19,11 +19,10 @@ package org.apache.nifi.processors.aws.credentials.provider.factory;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
-import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.processors.aws.credentials.provider.factory.strategies.ExplicitDefaultCredentialsStrategy;
 import org.apache.nifi.processors.aws.credentials.provider.factory.strategies.AccessKeyPairCredentialsStrategy;
 import org.apache.nifi.processors.aws.credentials.provider.factory.strategies.FileCredentialsStrategy;
@@ -33,6 +32,7 @@ import org.apache.nifi.processors.aws.credentials.provider.factory.strategies.Im
 import org.apache.nifi.processors.aws.credentials.provider.factory.strategies.AssumeRoleCredentialsStrategy;
 
 import com.amazonaws.auth.AWSCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
 
 /**
@@ -65,18 +65,13 @@ public class CredentialsProviderFactory {
         strategies.add(new AssumeRoleCredentialsStrategy());
     }
 
-    public CredentialsStrategy selectPrimaryStrategy(final Map<PropertyDescriptor, String> properties) {
+    public CredentialsStrategy selectPrimaryStrategy(final PropertyContext propertyContext) {
         for (CredentialsStrategy strategy : strategies) {
-            if (strategy.canCreatePrimaryCredential(properties)) {
+            if (strategy.canCreatePrimaryCredential(propertyContext)) {
                 return strategy;
             }
         }
         return null;
-    }
-
-    public CredentialsStrategy selectPrimaryStrategy(final ValidationContext validationContext) {
-        final Map<PropertyDescriptor, String> properties = validationContext.getProperties();
-        return selectPrimaryStrategy(properties);
     }
 
     /**
@@ -103,15 +98,14 @@ public class CredentialsProviderFactory {
      * the factory.
      * @return AWSCredentialsProvider implementation
      */
-    public AWSCredentialsProvider getCredentialsProvider(final Map<PropertyDescriptor, String> properties) {
-        final CredentialsStrategy primaryStrategy = selectPrimaryStrategy(properties);
-        AWSCredentialsProvider primaryCredentialsProvider = primaryStrategy.getCredentialsProvider(properties);
+    public AWSCredentialsProvider getCredentialsProvider(final PropertyContext propertyContext) {
+        final CredentialsStrategy primaryStrategy = selectPrimaryStrategy(propertyContext);
+        AWSCredentialsProvider primaryCredentialsProvider = primaryStrategy.getCredentialsProvider(propertyContext);
         AWSCredentialsProvider derivedCredentialsProvider = null;
 
         for (CredentialsStrategy strategy : strategies) {
-            if (strategy.canCreateDerivedCredential(properties)) {
-                derivedCredentialsProvider = strategy.getDerivedCredentialsProvider(properties,
-                        primaryCredentialsProvider);
+            if (strategy.canCreateDerivedCredential(propertyContext)) {
+                derivedCredentialsProvider = strategy.getDerivedCredentialsProvider(propertyContext, primaryCredentialsProvider);
                 break;
             }
         }
@@ -121,5 +115,25 @@ public class CredentialsProviderFactory {
         } else {
             return primaryCredentialsProvider;
         }
+    }
+
+    /**
+     * Produces the AwsCredentialsProvider according to the given property set and the strategies configured in
+     * the factory.
+     * @return AwsCredentialsProvider implementation
+     */
+    public AwsCredentialsProvider getAwsCredentialsProvider(final PropertyContext propertyContext) {
+        final CredentialsStrategy primaryStrategy = selectPrimaryStrategy(propertyContext);
+        final AwsCredentialsProvider primaryCredentialsProvider = primaryStrategy.getAwsCredentialsProvider(propertyContext);
+        AwsCredentialsProvider derivedCredentialsProvider = null;
+
+        for (final CredentialsStrategy strategy : strategies) {
+            if (strategy.canCreateDerivedCredential(propertyContext)) {
+                derivedCredentialsProvider = strategy.getDerivedAwsCredentialsProvider(propertyContext, primaryCredentialsProvider);
+                break;
+            }
+        }
+
+        return derivedCredentialsProvider == null ? primaryCredentialsProvider : derivedCredentialsProvider;
     }
 }

@@ -284,36 +284,38 @@ public class ListS3 extends AbstractS3Processor implements VerifiableProcessor {
 
 
     public static final List<PropertyDescriptor> properties = Collections.unmodifiableList(Arrays.asList(
-        LISTING_STRATEGY,
-        TRACKING_STATE_CACHE,
-        INITIAL_LISTING_TARGET,
-        TRACKING_TIME_WINDOW,
-        BUCKET,
-        REGION,
-        ACCESS_KEY,
-        SECRET_KEY,
-        RECORD_WRITER,
-        MIN_AGE,
-        MAX_AGE,
-        BATCH_SIZE,
-        WRITE_OBJECT_TAGS,
-        WRITE_USER_METADATA,
-        CREDENTIALS_FILE,
-        AWS_CREDENTIALS_PROVIDER_SERVICE,
-        TIMEOUT,
-        SSL_CONTEXT_SERVICE,
-        ENDPOINT_OVERRIDE,
-        SIGNER_OVERRIDE,
-        PROXY_CONFIGURATION_SERVICE,
-        PROXY_HOST,
-        PROXY_HOST_PORT,
-        PROXY_USERNAME,
-        PROXY_PASSWORD,
-        DELIMITER,
-        PREFIX,
-        USE_VERSIONS,
-        LIST_TYPE,
-        REQUESTER_PAYS));
+            LISTING_STRATEGY,
+            TRACKING_STATE_CACHE,
+            INITIAL_LISTING_TARGET,
+            TRACKING_TIME_WINDOW,
+            BUCKET,
+            REGION,
+            ACCESS_KEY,
+            SECRET_KEY,
+            RECORD_WRITER,
+            MIN_AGE,
+            MAX_AGE,
+            BATCH_SIZE,
+            WRITE_OBJECT_TAGS,
+            WRITE_USER_METADATA,
+            CREDENTIALS_FILE,
+            AWS_CREDENTIALS_PROVIDER_SERVICE,
+            TIMEOUT,
+            SSL_CONTEXT_SERVICE,
+            ENDPOINT_OVERRIDE,
+            SIGNER_OVERRIDE,
+            S3_CUSTOM_SIGNER_CLASS_NAME,
+            S3_CUSTOM_SIGNER_MODULE_LOCATION,
+            PROXY_CONFIGURATION_SERVICE,
+            PROXY_HOST,
+            PROXY_HOST_PORT,
+            PROXY_USERNAME,
+            PROXY_PASSWORD,
+            DELIMITER,
+            PREFIX,
+            USE_VERSIONS,
+            LIST_TYPE,
+            REQUESTER_PAYS));
 
     public static final Set<Relationship> relationships = Collections.singleton(REL_SUCCESS);
 
@@ -412,7 +414,7 @@ public class ListS3 extends AbstractS3Processor implements VerifiableProcessor {
 
     private void restoreState(final ProcessSession session) throws IOException {
         final StateMap stateMap = session.getState(Scope.CLUSTER);
-        if (stateMap.getVersion() == -1L || stateMap.get(CURRENT_TIMESTAMP) == null || stateMap.get(CURRENT_KEY_PREFIX+"0") == null) {
+        if (!stateMap.getStateVersion().isPresent() || stateMap.get(CURRENT_TIMESTAMP) == null || stateMap.get(CURRENT_KEY_PREFIX+"0") == null) {
             forcefullyUpdateListing(0L, Collections.emptySet());
         } else {
             final long timestamp = Long.parseLong(stateMap.get(CURRENT_TIMESTAMP));
