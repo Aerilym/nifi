@@ -1084,9 +1084,27 @@ public class LookupRecordHTTP extends AbstractProcessor {
         OkHttpClient okHttpClient = okHttpClientAtomicReference.get();
         
         FlowFile flowFile = session.get();
+
+        // Checking to see if the property to put the body of the response in an attribute was set
+        boolean putToAttribute = context.getProperty(RESPONSE_BODY_ATTRIBUTE_NAME).isSet();
+
         if (flowFile == null) {
-            return;
+            if (context.hasNonLoopConnection()) {
+                return;
+            }
+
+            final String method = getRequestMethod(context, null);
+            final Optional<HttpMethod> requestMethodFound = findRequestMethod(method);
+            final HttpMethod requestMethod = requestMethodFound.orElse(HttpMethod.GET);
+            if (requestMethod.isRequestBodySupported()) {
+                return;
+            } else if (putToAttribute) {
+                flowFile = session.create();
+            }
         }
+
+        final int maxAttributeSize = context.getProperty(RESPONSE_BODY_ATTRIBUTE_SIZE).asInteger();
+        final ComponentLog logger = getLogger();
 
         final RecordReaderFactory readerFactory = context.getProperty(RECORD_READER).asControllerService(RecordReaderFactory.class);
         final RecordSetWriterFactory writerFactory = context.getProperty(RECORD_WRITER).asControllerService(RecordSetWriterFactory.class);
@@ -1117,7 +1135,179 @@ public class LookupRecordHTTP extends AbstractProcessor {
                         // Looping through each record in the flowfile
                         Record record;
                         while ((record = reader.nextRecord()) != null) {
+
                             final Set<Relationship> relationships = replacementStrategy.lookup(record, context, lookupContext);
+                            //Create a new FlowFile containing the record
+                            FlowFile requestFlowFile = session.create();
+                            final RecordSetWriter recordWriter = writerFactory.createWriter(logger, enrichedSchema, null, requestFlowFile);
+                            recordWriter.write(record);
+                            recordWriter.close();
+
+                            FlowFile responseFlowFile = null;
+
+                            try {
+                                                           
+                                final UUID txId = UUID.randomUUID();
+
+                                final String urlProperty = trimToEmpty(context.getProperty(HTTP_URL).evaluateAttributeExpressions(requestFlowFile).getValue());
+                                final URL url = new URL(urlProperty);
+                    
+                                Request httpRequest = configureRequest(context, session, requestFlowFile, url);
+                                logRequest(logger, httpRequest);
+                    
+                                if (httpRequest.body() != null) {
+                                    session.getProvenanceReporter().send(requestFlowFile, url.toExternalForm(), true);
+                                }
+                    
+                                final long startNanos = System.nanoTime();
+                    
+                                try (Response responseHttp = okHttpClient.newCall(httpRequest).execute()) {
+                                    logResponse(logger, url, responseHttp);
+                    
+                                    // store the status code and message
+                                    int statusCode = responseHttp.code();
+                                    String statusMessage = responseHttp.message();
+                    
+                                    // Create a map of the status attributes that are always written to the request and response FlowFiles
+                                    Map<String, String> statusAttributes = new HashMap<>();
+                                    statusAttributes.put(STATUS_CODE, String.valueOf(statusCode));
+                                    statusAttributes.put(STATUS_MESSAGE, statusMessage);
+                                    statusAttributes.put(REQUEST_URL, url.toExternalForm());
+                                    statusAttributes.put(REQUEST_DURATION, Long.toString(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos)));
+                                    statusAttributes.put(RESPONSE_URL, responseHttp.request().url().toString());
+                                    statusAttributes.put(TRANSACTION_ID, txId.toString());
+                    
+                                    if (requestFlowFile != null) {
+                                        requestFlowFile = session.putAllAttributes(requestFlowFile, statusAttributes);
+                                    }
+                    
+                                    // If the property to add the response headers to the request flowfile is true then add them
+                                    if (context.getProperty(RESPONSE_HEADER_REQUEST_ATTRIBUTES_ENABLED).asBoolean() && requestFlowFile != null) {
+                                        // write the response headers as attributes
+                                        // this will overwrite any existing flowfile attributes
+                                        requestFlowFile = session.putAllAttributes(requestFlowFile, convertAttributesFromHeaders(responseHttp));
+                                    }
+                    
+                                    boolean outputBodyToRequestAttribute = (!isSuccess(statusCode) || putToAttribute) && requestFlowFile != null;
+                                    boolean outputBodyToResponseContent = (isSuccess(statusCode) && !putToAttribute) || context.getProperty(RESPONSE_GENERATION_REQUIRED).asBoolean();
+                                    ResponseBody responseBody = responseHttp.body();
+                                    boolean bodyExists = responseBody != null && !context.getProperty(RESPONSE_BODY_IGNORED).asBoolean();
+                    
+                                    InputStream responseBodyStream = null;
+                                    SoftLimitBoundedByteArrayOutputStream outputStreamToRequestAttribute = null;
+                                    TeeInputStream teeInputStream = null;
+                                    try {
+                                        responseBodyStream = bodyExists ? responseBody.byteStream() : null;
+                                        if (responseBodyStream != null && outputBodyToRequestAttribute && outputBodyToResponseContent) {
+                                            outputStreamToRequestAttribute = new SoftLimitBoundedByteArrayOutputStream(maxAttributeSize);
+                                            teeInputStream = new TeeInputStream(responseBodyStream, outputStreamToRequestAttribute);
+                                        }
+                    
+                                        if (outputBodyToResponseContent) {
+                                            /*
+                                             * If successful and putting to response flowfile, store the response body as the flowfile payload
+                                             * we include additional flowfile attributes including the response headers and the status codes.
+                                             */
+                    
+                                            // clone the flowfile to capture the response
+                                            if (requestFlowFile != null) {
+                                                responseFlowFile = session.create(requestFlowFile);
+                                            } else {
+                                                responseFlowFile = session.create();
+                                            }
+                    
+                                            // write attributes to response flowfile
+                                            responseFlowFile = session.putAllAttributes(responseFlowFile, statusAttributes);
+                    
+                                            // write the response headers as attributes
+                                            // this will overwrite any existing flowfile attributes
+                                            responseFlowFile = session.putAllAttributes(responseFlowFile, convertAttributesFromHeaders(responseHttp));
+                    
+                                            // update FlowFile's filename attribute with an extracted value from the remote URL
+                                            if (FlowFileNamingStrategy.URL_PATH.equals(getFlowFileNamingStrategy(context)) && HttpMethod.GET.name().equals(httpRequest.method())) {
+                                                String fileName = getFileNameFromUrl(url);
+                                                if (fileName != null) {
+                                                    responseFlowFile = session.putAttribute(responseFlowFile, CoreAttributes.FILENAME.key(), fileName);
+                                                }
+                                            }
+                    
+                                            // transfer the message body to the payload
+                                            // can potentially be null in edge cases
+                                            if (bodyExists) {
+                                                // write content type attribute to response flowfile if it is available
+                                                final MediaType contentType = responseBody.contentType();
+                                                if (contentType != null) {
+                                                    responseFlowFile = session.putAttribute(responseFlowFile, CoreAttributes.MIME_TYPE.key(), contentType.toString());
+                                                }
+                                                if (teeInputStream != null) {
+                                                    responseFlowFile = session.importFrom(teeInputStream, responseFlowFile);
+                                                } else {
+                                                    responseFlowFile = session.importFrom(responseBodyStream, responseFlowFile);
+                                                }
+                    
+                                                // emit provenance event
+                                                final long millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+                                                if (requestFlowFile != null) {
+                                                    session.getProvenanceReporter().fetch(responseFlowFile, url.toExternalForm(), millis);
+                                                } else {
+                                                    session.getProvenanceReporter().receive(responseFlowFile, url.toExternalForm(), millis);
+                                                }
+                                            }
+                                        }
+                    
+                                        // if not successful and request flowfile is not null, store the response body into a flowfile attribute
+                                        if (outputBodyToRequestAttribute && bodyExists) {
+                                            String attributeKey = context.getProperty(RESPONSE_BODY_ATTRIBUTE_NAME).evaluateAttributeExpressions(requestFlowFile).getValue();
+                                            if (attributeKey == null) {
+                                                attributeKey = RESPONSE_BODY;
+                                            }
+                                            byte[] outputBuffer;
+                                            int size;
+                    
+                                            if (outputStreamToRequestAttribute != null) {
+                                                outputBuffer = outputStreamToRequestAttribute.getBuffer();
+                                                size = outputStreamToRequestAttribute.size();
+                                            } else {
+                                                outputBuffer = new byte[maxAttributeSize];
+                                                size = StreamUtils.fillBuffer(responseBodyStream, outputBuffer, false);
+                                            }
+                                            String bodyString = new String(outputBuffer, 0, size, getCharsetFromMediaType(responseBody.contentType()));
+                                            requestFlowFile = session.putAttribute(requestFlowFile, attributeKey, bodyString);
+                    
+                                            final long processingDuration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+                                            final String eventDetails = String.format("Response Body Attribute Added [%s] Processing Duration [%d ms]", attributeKey, processingDuration);
+                                            session.getProvenanceReporter().modifyAttributes(requestFlowFile, eventDetails);
+                                        }
+                                    } finally {
+                                        if (outputStreamToRequestAttribute != null) {
+                                            outputStreamToRequestAttribute.close();
+                                        }
+                                        if (teeInputStream != null) {
+                                            teeInputStream.close();
+                                        } else if (responseBodyStream != null) {
+                                            responseBodyStream.close();
+                                        }
+                                    }
+                    
+                                    route(requestFlowFile, responseFlowFile, session, context, statusCode);
+                    
+                                }
+                            } catch (final Exception e) {
+                                if (requestFlowFile == null) {
+                                    logger.error("Request Processing failed", e);
+                                    context.yield();
+                                } else {
+                                    logger.error("Request Processing failed: {}", requestFlowFile, e);
+                                    requestFlowFile = session.penalize(requestFlowFile);
+                                    requestFlowFile = session.putAttribute(requestFlowFile, EXCEPTION_CLASS, e.getClass().getName());
+                                    requestFlowFile = session.putAttribute(requestFlowFile, EXCEPTION_MESSAGE, e.getMessage());
+                                    session.transfer(requestFlowFile, FAILURE);
+                                }
+                    
+                                if (responseFlowFile != null) {
+                                    session.remove(responseFlowFile);
+                                }
+                            }
 
                             for (final Relationship relationship : relationships) {
                                 // Determine the Write Schema to use for each relationship
@@ -1196,6 +1386,129 @@ public class LookupRecordHTTP extends AbstractProcessor {
         session.remove(flowFile);
         getLogger().info("Successfully processed {}, creating {} derivative FlowFiles and processing {} records",
             flowFile, lookupContext.getRelationshipsUsed().size(), replacementStrategy.getLookupCount());
+    }
+
+    private RequestBody getRequestBodyToSend(final ProcessSession session, final ProcessContext context,
+                                             final FlowFile requestFlowFile,
+                                             final ContentEncodingStrategy contentEncodingStrategy
+    ) {
+        boolean requestBodyEnabled = context.getProperty(REQUEST_BODY_ENABLED).asBoolean();
+
+        String evalContentType = context.getProperty(REQUEST_CONTENT_TYPE)
+                .evaluateAttributeExpressions(requestFlowFile).getValue();
+        final String contentType = StringUtils.isBlank(evalContentType) ? DEFAULT_CONTENT_TYPE : evalContentType;
+        String formDataName = context.getProperty(REQUEST_FORM_DATA_NAME).evaluateAttributeExpressions(requestFlowFile).getValue();
+
+        // Check for dynamic properties for form components.
+        // Even if the flowfile is not sent, we may still send form parameters.
+        Map<String, PropertyDescriptor> propertyDescriptors = new HashMap<>();
+        for (final Map.Entry<PropertyDescriptor, String> entry : context.getProperties().entrySet()) {
+            Matcher matcher = FORM_DATA_NAME_PARAMETER_PATTERN.matcher(entry.getKey().getName());
+            if (matcher.matches()) {
+                propertyDescriptors.put(matcher.group(FORM_DATA_NAME_GROUP), entry.getKey());
+            }
+        }
+
+        final boolean contentLengthUnknown = chunkedTransferEncoding || ContentEncodingStrategy.GZIP == contentEncodingStrategy;
+        RequestBody requestBody = new RequestBody() {
+            @Nullable
+            @Override
+            public MediaType contentType() {
+                return MediaType.parse(contentType);
+            }
+
+            @Override
+            public void writeTo(final BufferedSink sink) throws IOException {
+                final BufferedSink outputSink = (ContentEncodingStrategy.GZIP == contentEncodingStrategy)
+                        ? Okio.buffer(new GzipSink(sink))
+                        : sink;
+
+                session.read(requestFlowFile, inputStream -> {
+                    final Source source = Okio.source(inputStream);
+                    outputSink.writeAll(source);
+                });
+
+                // Close Output Sink for gzip to write trailing bytes
+                if (ContentEncodingStrategy.GZIP == contentEncodingStrategy) {
+                    outputSink.close();
+                }
+            }
+
+            @Override
+            public long contentLength() {
+                return contentLengthUnknown ? -1 : requestFlowFile.getSize();
+            }
+        };
+
+        if (propertyDescriptors.size() > 0 || StringUtils.isNotEmpty(formDataName)) {
+            // we have form data
+            MultipartBody.Builder builder = new Builder().setType(MultipartBody.FORM);
+            boolean useFileName = context.getProperty(REQUEST_FORM_DATA_FILENAME_ENABLED).asBoolean();
+            String contentFileName = null;
+            if (useFileName) {
+                contentFileName = requestFlowFile.getAttribute(CoreAttributes.FILENAME.key());
+            }
+            // loop through the dynamic form parameters
+            for (final Map.Entry<String, PropertyDescriptor> entry : propertyDescriptors.entrySet()) {
+                final String propValue = context.getProperty(entry.getValue().getName())
+                        .evaluateAttributeExpressions(requestFlowFile).getValue();
+                builder.addFormDataPart(entry.getKey(), propValue);
+            }
+            if (requestBodyEnabled) {
+                builder.addFormDataPart(formDataName, contentFileName, requestBody);
+            }
+            return builder.build();
+        } else if (requestBodyEnabled) {
+            return requestBody;
+        }
+        return RequestBody.create(new byte[0], null);
+    }
+
+
+    private Request configureRequest(final ProcessContext context, final ProcessSession session, final FlowFile requestFlowFile, URL url) {
+        final Request.Builder requestBuilder = new Request.Builder();
+
+        requestBuilder.url(url);
+        final String authUser = trimToEmpty(context.getProperty(REQUEST_USERNAME).getValue());
+
+        // If the username/password properties are set then check if digest auth is being used
+        if ("false".equalsIgnoreCase(context.getProperty(REQUEST_DIGEST_AUTHENTICATION_ENABLED).getValue())) {
+            if (!authUser.isEmpty()) {
+                final String authPass = trimToEmpty(context.getProperty(REQUEST_PASSWORD).getValue());
+
+                String credential = Credentials.basic(authUser, authPass);
+                requestBuilder.header(HttpHeader.AUTHORIZATION.getHeader(), credential);
+            } else {
+                oauth2AccessTokenProviderOptional.ifPresent(oauth2AccessTokenProvider ->
+                    requestBuilder.addHeader(HttpHeader.AUTHORIZATION.getHeader(), "Bearer " + oauth2AccessTokenProvider.getAccessDetails().getAccessToken())
+                );
+            }
+        }
+
+        final String contentEncoding = context.getProperty(REQUEST_CONTENT_ENCODING).getValue();
+        final ContentEncodingStrategy contentEncodingStrategy = ContentEncodingStrategy.valueOf(contentEncoding);
+        if (ContentEncodingStrategy.GZIP == contentEncodingStrategy) {
+            requestBuilder.addHeader(HttpHeader.CONTENT_ENCODING.getHeader(), ContentEncodingStrategy.GZIP.getValue().toLowerCase());
+        }
+
+        final String method = getRequestMethod(context, requestFlowFile);
+        final Optional<HttpMethod> httpMethodFound = findRequestMethod(method);
+
+        final RequestBody requestBody;
+        if (httpMethodFound.isPresent()) {
+            final HttpMethod httpMethod = httpMethodFound.get();
+            if (httpMethod.isRequestBodySupported()) {
+                requestBody = getRequestBodyToSend(session, context, requestFlowFile, contentEncodingStrategy);
+            } else {
+                requestBody = null;
+            }
+        } else {
+            requestBody = null;
+        }
+        requestBuilder.method(method, requestBody);
+
+        setHeaderProperties(context, requestBuilder, requestFlowFile);
+        return requestBuilder.build();
     }
 
     private ReplacementStrategy createReplacementStrategy(final ProcessContext context) {
@@ -1590,7 +1903,191 @@ public class LookupRecordHTTP extends AbstractProcessor {
         }
     }
 
+    
+
+    private void setHeaderProperties(final ProcessContext context, final Request.Builder requestBuilder, final FlowFile requestFlowFile) {
+        final String userAgent = trimToEmpty(context.getProperty(REQUEST_USER_AGENT).evaluateAttributeExpressions(requestFlowFile).getValue());
+        requestBuilder.addHeader(HttpHeader.USER_AGENT.getHeader(), userAgent);
+
+        if (context.getProperty(REQUEST_DATE_HEADER_ENABLED).asBoolean()) {
+            final ZonedDateTime universalCoordinatedTimeNow = ZonedDateTime.now(ZoneOffset.UTC);
+            requestBuilder.addHeader(HttpHeader.DATE.getHeader(), RFC_2616_DATE_TIME.format(universalCoordinatedTimeNow));
+        }
+
+        for (String headerKey : dynamicPropertyNames) {
+            String headerValue = context.getProperty(headerKey).evaluateAttributeExpressions(requestFlowFile).getValue();
+
+            // ignore form data name dynamic properties
+            if (FORM_DATA_NAME_PARAMETER_PATTERN.matcher(headerKey).matches()) {
+                continue;
+            }
+
+            requestBuilder.addHeader(headerKey, headerValue);
+        }
+
+        // iterate through the flowfile attributes, adding any attribute that
+        // matches the attributes-to-send pattern. if the pattern is not set
+        // (it's an optional property), ignore that attribute entirely
+        if (requestHeaderAttributesPattern != null && requestFlowFile != null) {
+            Map<String, String> attributes = requestFlowFile.getAttributes();
+            Matcher m = requestHeaderAttributesPattern.matcher("");
+            for (Map.Entry<String, String> entry : attributes.entrySet()) {
+                String headerKey = trimToEmpty(entry.getKey());
+                if (IGNORED_REQUEST_ATTRIBUTES.contains(headerKey)) {
+                    continue;
+                }
+
+                // check if our attribute key matches the pattern
+                // if so, include in the request as a header
+                m.reset(headerKey);
+                if (m.matches()) {
+                    String headerVal = trimToEmpty(entry.getValue());
+                    requestBuilder.addHeader(headerKey, headerVal);
+                }
+            }
+        }
+    }
+
+    private void route(FlowFile request, FlowFile response, ProcessSession session, ProcessContext context, int statusCode) {
+        // check if we should yield the processor
+        if (!isSuccess(statusCode) && request == null) {
+            context.yield();
+        }
+
+        // If the property to output the response flowfile regardless of status code is set then transfer it
+        boolean responseSent = false;
+        if (context.getProperty(RESPONSE_GENERATION_REQUIRED).asBoolean()) {
+            session.transfer(response, RESPONSE);
+            responseSent = true;
+        }
+
+        // transfer to the correct relationship
+        // 2xx -> SUCCESS
+        if (isSuccess(statusCode)) {
+            // we have two flowfiles to transfer
+            if (request != null) {
+                session.transfer(request, ORIGINAL);
+            }
+            if (response != null && !responseSent) {
+                session.transfer(response, RESPONSE);
+            }
+
+            // 5xx -> RETRY
+        } else if (statusCode / 100 == 5) {
+            if (request != null) {
+                request = session.penalize(request);
+                session.transfer(request, RETRY);
+            }
+
+            // 1xx, 3xx, 4xx -> NO RETRY
+        } else {
+            if (request != null) {
+                if (context.getProperty(REQUEST_FAILURE_PENALIZATION_ENABLED).asBoolean()) {
+                    request = session.penalize(request);
+                }
+                session.transfer(request, NO_RETRY);
+            }
+        }
+
+    }
+
+    private boolean isSuccess(int statusCode) {
+        return statusCode / 100 == 2;
+    }
+
+    private void logRequest(ComponentLog logger, Request request) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("\nRequest to remote service:\n\t{}\n{}",
+                    request.url().url().toExternalForm(), getLogString(request.headers().toMultimap()));
+        }
+    }
+
+    private void logResponse(ComponentLog logger, URL url, Response response) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("\nResponse from remote service:\n\t{}\n{}",
+                    url.toExternalForm(), getLogString(response.headers().toMultimap()));
+        }
+    }
+
+    private String getLogString(Map<String, List<String>> map) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, List<String>> entry : map.entrySet()) {
+            List<String> list = entry.getValue();
+            if (!list.isEmpty()) {
+                sb.append("\t");
+                sb.append(entry.getKey());
+                sb.append(": ");
+                if (list.size() == 1) {
+                    sb.append(list.get(0));
+                } else {
+                    sb.append(list);
+                }
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Returns a Map of flowfile attributes from the response http headers. Multivalue headers are naively converted to comma separated strings.
+     */
+    private Map<String, String> convertAttributesFromHeaders(final Response responseHttp) {
+        // create a new hashmap to store the values from the connection
+        final Map<String, String> attributes = new HashMap<>();
+        final Headers headers = responseHttp.headers();
+        headers.names().forEach((key) -> {
+            final List<String> values = headers.values(key);
+            // we ignore any headers with no actual values (rare)
+            if (!values.isEmpty()) {
+                // create a comma separated string from the values, this is stored in the map
+                final String value = StringUtils.join(values, MULTIPLE_HEADER_DELIMITER);
+                attributes.put(key, value);
+            }
+        });
+
+        final Handshake handshake = responseHttp.handshake();
+        if (handshake != null) {
+            final Principal principal = handshake.peerPrincipal();
+            if (principal != null) {
+                attributes.put(REMOTE_DN, principal.getName());
+            }
+        }
+
+        return attributes;
+    }
+
+    private Charset getCharsetFromMediaType(MediaType contentType) {
+        return contentType != null ? contentType.charset(StandardCharsets.UTF_8) : StandardCharsets.UTF_8;
+    }
+
     private static File getResponseCacheDirectory() throws IOException {
         return Files.createTempDirectory(InvokeHTTP.class.getSimpleName()).toFile();
+    }
+
+    private FlowFileNamingStrategy getFlowFileNamingStrategy(final ProcessContext context) {
+        final String strategy = context.getProperty(RESPONSE_FLOW_FILE_NAMING_STRATEGY).getValue();
+        return FlowFileNamingStrategy.valueOf(strategy);
+    }
+
+    private String getFileNameFromUrl(URL url) {
+        String fileName = null;
+        String path = StringUtils.removeEnd(url.getPath(), "/");
+
+        if (!StringUtils.isEmpty(path)) {
+            fileName = path.substring(path.lastIndexOf('/') + 1);
+        }
+
+        return fileName;
+    }
+
+    private Optional<HttpMethod> findRequestMethod(String method) {
+        return Arrays.stream(HttpMethod.values())
+                .filter(httpMethod -> httpMethod.name().equals(method))
+                .findFirst();
+    }
+
+    private String getRequestMethod(final PropertyContext context, final FlowFile flowFile) {
+        final String method = context.getProperty(HTTP_METHOD).evaluateAttributeExpressions(flowFile).getValue().toUpperCase();
+        return trimToEmpty(method);
     }
 }
