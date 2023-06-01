@@ -147,6 +147,8 @@
         <h2.version>2.1.214</h2.version>
         <zookeeper.version>3.8.1</zookeeper.version>
         <caffeine.version>3.1.6</caffeine.version>
+        <graalvm.version>22.1.0</graalvm.version>
+        <compiler.dir>${project.build.directory}/compiler</compiler.dir>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -774,6 +776,34 @@
             <groupId>org.codehaus.groovy</groupId>
             <artifactId>groovy-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.sdk</groupId>
+            <artifactId>graal-sdk</artifactId>
+            <version>${graalvm.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.js</groupId>
+            <artifactId>js</artifactId>
+            <version>${graalvm.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.js</groupId>
+            <artifactId>js-scriptengine</artifactId>
+            <version>${graalvm.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.tools</groupId>
+            <artifactId>profiler</artifactId>
+            <version>${graalvm.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.tools</groupId>
+            <artifactId>chromeinspector</artifactId>
+            <version>${graalvm.version}</version>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 

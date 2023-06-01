@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.script;
 
+import com.oracle.truffle.js.scriptengine.GraalJSScriptEngine;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processors.script.ScriptRunner;
 import org.apache.nifi.script.impl.ClojureScriptRunner;
@@ -23,6 +24,8 @@ import org.apache.nifi.script.impl.GenericScriptRunner;
 import org.apache.nifi.script.impl.GroovyScriptRunner;
 import org.apache.nifi.script.impl.JavascriptScriptRunner;
 import org.apache.nifi.script.impl.JythonScriptRunner;
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.HostAccess;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
@@ -59,7 +62,12 @@ public class ScriptRunnerFactory {
             return new ClojureScriptRunner(scriptEngine, scriptToRun, null);
         }
         if ("ECMAScript".equals(scriptEngineName)) {
-            return new JavascriptScriptRunner(scriptEngine, scriptToRun, null);
+            ScriptEngine engine = GraalJSScriptEngine.create(null,
+                    Context.newBuilder("js")
+                            .allowHostAccess(HostAccess.ALL)
+                            .allowHostClassLookup(s -> true)
+                            .option("js.ecmascript-version", "2022"));
+            return new JavascriptScriptRunner(engine, scriptToRun, null);
         }
         return new GenericScriptRunner(scriptEngine, scriptToRun, null);
     }
