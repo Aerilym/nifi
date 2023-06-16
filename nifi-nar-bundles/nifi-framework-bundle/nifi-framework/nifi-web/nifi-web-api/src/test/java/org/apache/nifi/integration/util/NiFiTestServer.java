@@ -18,7 +18,7 @@ package org.apache.nifi.integration.util;
 
 import java.io.File;
 import java.util.Collections;
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 import javax.ws.rs.client.Client;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.security.util.StandardTlsConfiguration;
@@ -33,6 +33,7 @@ import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,7 +78,7 @@ public class NiFiTestServer {
 
     // TODO: Refactor this method to use proper factory methods
     private void createSecureConnector() {
-        org.eclipse.jetty.util.ssl.SslContextFactory contextFactory = new org.eclipse.jetty.util.ssl.SslContextFactory.Server();
+        SslContextFactory.Server contextFactory = new org.eclipse.jetty.util.ssl.SslContextFactory.Server();
 
         // require client auth when not supporting login or anonymous access
         if (StringUtils.isBlank(properties.getProperty(NiFiProperties.SECURITY_USER_LOGIN_IDENTITY_PROVIDER))) {
@@ -186,7 +187,7 @@ public class NiFiTestServer {
      */
     public <T> T getSpringBean(String beanName, Class<T> clazz) {
         ServletContext servletContext = webappContext.getServletHandler().getServletContext();
-        WebApplicationContext webApplicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext(servletContext);
+        WebApplicationContext webApplicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext((javax.servlet.ServletContext) servletContext);
         return clazz.cast(webApplicationContext.getBean(beanName));
     }
 }

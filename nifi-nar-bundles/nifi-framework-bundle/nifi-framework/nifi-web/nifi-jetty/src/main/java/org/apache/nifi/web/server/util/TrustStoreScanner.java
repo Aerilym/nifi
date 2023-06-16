@@ -116,16 +116,6 @@ public class TrustStoreScanner extends ContainerLifeCycle implements Scanner.Dis
         }
     }
 
-    @ManagedOperation(value = "Scan for changes in the SSL Truststore", impact = "ACTION")
-    public void scan() {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("scanning");
-        }
-
-        _scanner.scan();
-        _scanner.scan();
-    }
-
     @ManagedOperation(value = "Reload the SSL Truststore", impact = "ACTION")
     public void reload() {
         if (LOG.isDebugEnabled()) {

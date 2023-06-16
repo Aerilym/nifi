@@ -28,6 +28,7 @@ import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.webapp.Configuration;
+import org.eclipse.jetty.webapp.Configurations;
 import org.eclipse.jetty.webapp.JettyWebXmlConfiguration;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.slf4j.Logger;
@@ -38,12 +39,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.URI;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -76,8 +72,9 @@ public class JettyServer {
         this.server = new Server(threadPool);
 
         // enable the annotation based configuration to ensure the jsp container is initialized properly
-        final Configuration.ClassList classlist = Configuration.ClassList.setServerDefault(server);
-        classlist.addBefore(JettyWebXmlConfiguration.class.getName(), AnnotationConfiguration.class.getName());
+        final Configurations config = Configurations.setServerDefault(server);
+        config.add(JettyWebXmlConfiguration.class.getName());
+        config.add(AnnotationConfiguration.class.getName());
 
         try {
             configureConnectors();

@@ -80,10 +80,7 @@ import org.eclipse.jetty.servlet.DefaultServlet;
 import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
-import org.eclipse.jetty.webapp.Configuration;
-import org.eclipse.jetty.webapp.JettyWebXmlConfiguration;
-import org.eclipse.jetty.webapp.WebAppClassLoader;
-import org.eclipse.jetty.webapp.WebAppContext;
+import org.eclipse.jetty.webapp.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -91,8 +88,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
-import javax.servlet.DispatcherType;
-import javax.servlet.ServletContext;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.ServletContext;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -132,7 +129,7 @@ public class JettyServer implements NiFiServer, ExtensionUiLoader {
     private static final String WEB_DEFAULTS_XML = "org/apache/nifi/web/webdefault.xml";
 
     private static final String CONTAINER_INCLUDE_PATTERN_KEY = "org.eclipse.jetty.server.webapp.ContainerIncludeJarPattern";
-    private static final String CONTAINER_INCLUDE_PATTERN_VALUE = ".*/[^/]*servlet-api-[^/]*\\.jar$|.*/javax.servlet.jsp.jstl-.*\\\\.jar$|.*/[^/]*taglibs.*\\.jar$";
+    private static final String CONTAINER_INCLUDE_PATTERN_VALUE = ".*/[^/]*servlet-api-[^/]*\\.jar$|.*/jakarta.servlet.jsp.jstl-.*\\\\.jar$|.*/[^/]*taglibs.*\\.jar$";
 
     private static final String ALLOWED_CONTEXT_PATHS_PARAMETER = "allowedContextPaths";
 
@@ -197,8 +194,9 @@ public class JettyServer implements NiFiServer, ExtensionUiLoader {
         this.server = new Server(threadPool);
 
         // enable the annotation based configuration to ensure the jsp container is initialized properly
-        final Configuration.ClassList classlist = Configuration.ClassList.setServerDefault(server);
-        classlist.addBefore(JettyWebXmlConfiguration.class.getName(), AnnotationConfiguration.class.getName());
+        final Configurations config = Configurations.setServerDefault(server);
+        config.add(JettyWebXmlConfiguration.class.getName());
+        config.add(AnnotationConfiguration.class.getName());
 
         // configure server
         configureConnectors(server);
@@ -345,7 +343,7 @@ public class JettyServer implements NiFiServer, ExtensionUiLoader {
 
         // Inject the configuration context and security filter into contexts that need it
         final ServletContext webApiServletContext = webApiContext.getServletHandler().getServletContext();
-        final WebApplicationContext webApplicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext(webApiServletContext);
+        final WebApplicationContext webApplicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext((javax.servlet.ServletContext) webApiServletContext);
         final NiFiWebConfigurationContext configurationContext = webApplicationContext.getBean("nifiWebConfigurationContext", NiFiWebConfigurationContext.class);
         final FilterHolder securityFilter = webApiContext.getServletHandler().getFilter("springSecurityFilterChain");
 
@@ -593,9 +591,13 @@ public class JettyServer implements NiFiServer, ExtensionUiLoader {
         webappContext.setAttribute(CONTAINER_INCLUDE_PATTERN_KEY, CONTAINER_INCLUDE_PATTERN_VALUE);
 
         // remove slf4j server class to allow WAR files to have slf4j dependencies in WEB-INF/lib
-        List<String> serverClasses = new ArrayList<>(Arrays.asList(webappContext.getServerClasses()));
-        serverClasses.remove("org.slf4j.");
-        webappContext.setServerClasses(serverClasses.toArray(new String[0]));
+        String[] serverClasses = webappContext.getServerClasses();
+        List<String> serverClassesList = new ArrayList<>(Arrays.asList(serverClasses));
+        serverClassesList.remove("org.slf4j.");
+
+        ClassMatcher classMatcher = new ClassMatcher();
+        classMatcher.addAll(serverClassesList);
+        webappContext.setServerClassMatcher(classMatcher);
         webappContext.setDefaultsDescriptor(WEB_DEFAULTS_XML);
         webappContext.getMimeTypes().addMimeMapping("ttf", "font/ttf");
 
@@ -834,7 +836,7 @@ public class JettyServer implements NiFiServer, ExtensionUiLoader {
                 webApiServletContext.setAttribute("nifi-ui-extensions", componentUiExtensions);
 
                 // get the application context
-                final WebApplicationContext webApplicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext(webApiServletContext);
+                final WebApplicationContext webApplicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext((javax.servlet.ServletContext) webApiServletContext);
                 final NiFiWebConfigurationContext configurationContext = webApplicationContext.getBean("nifiWebConfigurationContext", NiFiWebConfigurationContext.class);
                 final FilterHolder securityFilter = webApiContext.getServletHandler().getFilter("springSecurityFilterChain");
 
@@ -883,7 +885,7 @@ public class JettyServer implements NiFiServer, ExtensionUiLoader {
 
                     logger.info("Loading Flow...");
 
-                    ApplicationContext ctx = WebApplicationContextUtils.getWebApplicationContext(webApiContext.getServletContext());
+                    ApplicationContext ctx = WebApplicationContextUtils.getWebApplicationContext((javax.servlet.ServletContext) webApiContext.getServletContext());
                     flowService = Objects.requireNonNull(ctx).getBean("flowService", FlowService.class);
 
                     // start and load the flow

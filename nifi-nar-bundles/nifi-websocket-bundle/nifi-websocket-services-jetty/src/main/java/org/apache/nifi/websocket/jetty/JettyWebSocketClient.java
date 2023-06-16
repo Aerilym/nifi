@@ -36,6 +36,7 @@ import org.apache.nifi.websocket.WebSocketClientService;
 import org.apache.nifi.websocket.WebSocketConfigurationException;
 import org.apache.nifi.websocket.WebSocketMessageRouter;
 import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
@@ -229,7 +230,8 @@ public class JettyWebSocketClient extends AbstractJettyWebSocketService implemen
             sslContextFactory = createSslFactory(sslService, false, false, null);
         }
 
-        HttpClient httpClient = new HttpClient(sslContextFactory);
+        assert sslContextFactory != null;
+        HttpClient httpClient = new HttpClient((HttpClientTransport) sslContextFactory);
 
         final String proxyHost = context.getProperty(PROXY_HOST).evaluateAttributeExpressions().getValue();
         final Integer proxyPort = context.getProperty(PROXY_PORT).evaluateAttributeExpressions().asInteger();
@@ -241,7 +243,7 @@ public class JettyWebSocketClient extends AbstractJettyWebSocketService implemen
 
         client = new WebSocketClient(httpClient);
 
-        configurePolicy(context, client.getPolicy());
+        configurePolicy(context, client);
         final String userName = context.getProperty(USER_NAME).evaluateAttributeExpressions().getValue();
         final String userPassword = context.getProperty(USER_PASSWORD).evaluateAttributeExpressions().getValue();
         final String customAuth = context.getProperty(CUSTOM_AUTH).evaluateAttributeExpressions().getValue();

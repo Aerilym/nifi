@@ -27,10 +27,9 @@ import javax.servlet.http.HttpServletResponse
 import static groovy.json.JsonOutput.prettyPrint
 import static groovy.json.JsonOutput.toJson
 
-class BasicAuth extends AbstractHandler {
+abstract class BasicAuth extends AbstractHandler {
 
-    @Override
-    void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+    static void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
         baseRequest.handled = true
         def authString = request.getHeader("Authorization")
         def headers = []

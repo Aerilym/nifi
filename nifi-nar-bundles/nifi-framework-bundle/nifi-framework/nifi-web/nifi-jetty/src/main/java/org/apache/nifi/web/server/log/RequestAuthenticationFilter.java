@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.web.server.log;
 
+import jakarta.servlet.*;
 import org.apache.nifi.web.security.log.AuthenticationUserAttribute;
 import org.eclipse.jetty.security.DefaultUserIdentity;
 import org.eclipse.jetty.security.UserAuthentication;
@@ -23,20 +24,16 @@ import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.UserIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.security.auth.Subject;
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+
 import java.io.IOException;
 import java.security.Principal;
 
 /**
  * Request Authentication Filter sets Jetty Request Authentication using Spring Security Authentication as Principal
  */
-public class RequestAuthenticationFilter extends OncePerRequestFilter {
+public class RequestAuthenticationFilter implements Filter {
     private static final Subject DEFAULT_SUBJECT = new Subject();
 
     private static final String[] DEFAULT_ROLES = new String[]{};
@@ -54,8 +51,9 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
      * @throws ServletException Thrown on FilterChain.doFilter()
      * @throws IOException      Thrown on FilterChain.doFilter()
      */
+
     @Override
-    protected void doFilterInternal(final HttpServletRequest httpServletRequest, final HttpServletResponse httpServletResponse, final FilterChain filterChain) throws ServletException, IOException {
+    public void doFilter(final ServletRequest httpServletRequest, final ServletResponse httpServletResponse, final FilterChain filterChain) throws ServletException, IOException {
         filterChain.doFilter(httpServletRequest, httpServletResponse);
 
         if (httpServletRequest instanceof Request) {
@@ -71,5 +69,15 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
                 request.setAuthentication(authentication);
             }
         }
+    }
+
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+        Filter.super.init(filterConfig);
+    }
+
+    @Override
+    public void destroy() {
+        Filter.super.destroy();
     }
 }

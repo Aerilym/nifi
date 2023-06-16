@@ -56,12 +56,12 @@ public class JettyWebSocketSession extends AbstractWebSocketSession {
 
     @Override
     public InetSocketAddress getRemoteAddress() {
-        return session.getRemoteAddress();
+        return (InetSocketAddress) session.getRemoteAddress();
     }
 
     @Override
     public InetSocketAddress getLocalAddress() {
-        return session.getLocalAddress();
+        return (InetSocketAddress) session.getLocalAddress();
     }
 
     @Override

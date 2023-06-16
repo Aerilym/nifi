@@ -120,7 +120,7 @@
         <testcontainers.version>1.18.3</testcontainers.version>
         <org.slf4j.version>2.0.7</org.slf4j.version>
         <ranger.version>2.4.0</ranger.version>
-        <jetty.version>9.4.51.v20230217</jetty.version>
+        <jetty.version>11.0.15</jetty.version>
         <jackson.bom.version>2.15.2</jackson.bom.version>
         <avro.version>1.11.1</avro.version>
         <jaxb.runtime.version>2.3.5</jaxb.runtime.version>
@@ -141,8 +141,8 @@
         <netty.3.version>3.10.6.Final</netty.3.version>
         <snakeyaml.version>2.0</snakeyaml.version>
         <netty.4.version>4.1.93.Final</netty.4.version>
-        <spring.version>5.3.27</spring.version>
-        <spring.security.version>5.8.3</spring.security.version>
+        <spring.version>6.0.10</spring.version>
+        <spring.security.version>6.1.0</spring.security.version>
         <swagger.annotations.version>1.6.11</swagger.annotations.version>
         <h2.version>2.1.214</h2.version>
         <zookeeper.version>3.8.1</zookeeper.version>
@@ -159,7 +159,12 @@
             <dependency>
                 <groupId>javax.servlet</groupId>
                 <artifactId>javax.servlet-api</artifactId>
-                <version>3.1.0</version>
+                <version>4.0.1</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.servlet</groupId>
+                <artifactId>jakarta.servlet-api</artifactId>
+                <version>6.0.0</version>
                 <scope>provided</scope>
             </dependency>
             <!-- jetty-schemas handling this explicitly  Must be in root lib -->
@@ -468,11 +473,6 @@
             </dependency>
             <dependency>
                 <groupId>org.eclipse.jetty</groupId>
-                <artifactId>jetty-continuation</artifactId>
-                <version>${jetty.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.eclipse.jetty</groupId>
                 <artifactId>jetty-client</artifactId>
                 <version>${jetty.version}</version>
             </dependency>
@@ -538,17 +538,17 @@
             </dependency>
             <dependency>
                 <groupId>org.eclipse.jetty.websocket</groupId>
-                <artifactId>websocket-api</artifactId>
+                <artifactId>websocket-jetty-api</artifactId>
                 <version>${jetty.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.eclipse.jetty.websocket</groupId>
-                <artifactId>websocket-client</artifactId>
+                <artifactId>websocket-jetty-client</artifactId>
                 <version>${jetty.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.eclipse.jetty.websocket</groupId>
-                <artifactId>websocket-server</artifactId>
+                <artifactId>websocket-jetty-server</artifactId>
                 <version>${jetty.version}</version>
             </dependency>
             <dependency>
@@ -560,7 +560,7 @@
             <dependency>
                 <groupId>org.eclipse.jetty</groupId>
                 <artifactId>apache-jstl</artifactId>
-                <version>${jetty.version}</version>
+                <version>11.0.0</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
@@ -730,6 +730,11 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>${caffeine.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjdk.nashorn</groupId>
+                <artifactId>nashorn-core</artifactId>
+                <version>15.4</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

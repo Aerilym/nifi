@@ -43,15 +43,15 @@ import org.apache.nifi.util.FlowFileUnpackagerV2;
 import org.apache.nifi.util.FlowFileUnpackagerV3;
 import org.eclipse.jetty.server.Request;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.MultipartConfigElement;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.Part;
+import jakarta.servlet.AsyncContext;
+import jakarta.servlet.MultipartConfigElement;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
 import javax.ws.rs.Path;
 import javax.ws.rs.core.MediaType;
 import java.io.BufferedInputStream;
@@ -288,7 +288,7 @@ public class ListenHTTPServlet extends HttpServlet {
             throws IOException, IllegalStateException, ServletException {
         Set<FlowFile> flowFileSet = new HashSet<>();
         String tempDir = System.getProperty("java.io.tmpdir");
-        request.setAttribute(Request.MULTIPART_CONFIG_ELEMENT, new MultipartConfigElement(tempDir, multipartRequestMaxSize, multipartRequestMaxSize, multipartReadBufferSize));
+        request.setAttribute(Request.__MULTIPART_CONFIG_ELEMENT, new MultipartConfigElement(tempDir, multipartRequestMaxSize, multipartRequestMaxSize, multipartReadBufferSize));
         int i = 0;
         final Collection<Part> requestParts = request.getParts();
         for (final Part part : requestParts) {

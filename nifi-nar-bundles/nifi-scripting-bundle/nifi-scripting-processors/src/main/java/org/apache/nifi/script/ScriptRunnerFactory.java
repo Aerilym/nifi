@@ -33,6 +33,8 @@ import java.net.URL;
 import java.util.LinkedList;
 import java.util.List;
 
+//import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory;
+
 public class ScriptRunnerFactory {
 
     private final static ScriptRunnerFactory INSTANCE = new ScriptRunnerFactory();
@@ -59,6 +61,7 @@ public class ScriptRunnerFactory {
             return new ClojureScriptRunner(scriptEngine, scriptToRun, null);
         }
         if ("ECMAScript".equals(scriptEngineName)) {
+
             return new JavascriptScriptRunner(scriptEngine, scriptToRun, null);
         }
         return new GenericScriptRunner(scriptEngine, scriptToRun, null);

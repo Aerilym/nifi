@@ -48,6 +48,7 @@ import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.handler.HandlerCollection;
+import org.eclipse.jetty.webapp.ClassMatcher;
 import org.eclipse.jetty.webapp.WebAppClassLoader;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.slf4j.Logger;
@@ -155,9 +156,14 @@ public class JettyServer {
         webappContext.setAttribute("org.eclipse.jetty.server.webapp.ContainerIncludeJarPattern", ".*/[^/]*servlet-api-[^/]*\\.jar$|.*/javax.servlet.jsp.jstl-.*\\\\.jar$|.*/[^/]*taglibs.*\\.jar$" );
 
         // remove slf4j server class to allow WAR files to have slf4j dependencies in WEB-INF/lib
-        List<String> serverClasses = new ArrayList<>(Arrays.asList(webappContext.getServerClasses()));
-        serverClasses.remove("org.slf4j.");
-        webappContext.setServerClasses(serverClasses.toArray(new String[0]));
+
+        String[] serverClasses = webappContext.getServerClasses();
+        List<String> serverClassesList = new ArrayList<>(Arrays.asList(serverClasses));
+        serverClassesList.remove("org.slf4j.");
+
+        ClassMatcher classMatcher = new ClassMatcher();
+        classMatcher.addAll(serverClassesList);
+        webappContext.setServerClassMatcher(classMatcher);
         webappContext.setDefaultsDescriptor(WEB_DEFAULTS_XML);
 
         // get the temp directory for this webapp

@@ -54,11 +54,11 @@ import org.eclipse.jetty.util.security.Constraint;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.WebSocketPolicy;
-import org.eclipse.jetty.websocket.servlet.ServletUpgradeRequest;
-import org.eclipse.jetty.websocket.servlet.ServletUpgradeResponse;
-import org.eclipse.jetty.websocket.servlet.WebSocketCreator;
-import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
-import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
+import org.eclipse.jetty.websocket.server.JettyServerUpgradeRequest;
+import org.eclipse.jetty.websocket.server.JettyServerUpgradeResponse;
+import org.eclipse.jetty.websocket.server.JettyWebSocketCreator;
+import org.eclipse.jetty.websocket.server.JettyWebSocketServlet;
+import org.eclipse.jetty.websocket.server.JettyWebSocketServletFactory;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -209,16 +209,16 @@ public class JettyWebSocketServer extends AbstractJettyWebSocketService implemen
         return results;
     }
 
-    public static class JettyWebSocketServlet extends WebSocketServlet implements WebSocketCreator {
+    public static class JettyJettyWebSocketServlet extends JettyWebSocketServlet implements JettyWebSocketCreator {
         @Override
-        public void configure(WebSocketServletFactory webSocketServletFactory) {
-            webSocketServletFactory.setCreator(this);
+        public void configure(JettyWebSocketServletFactory JettyWebSocketServletFactory) {
+            JettyWebSocketServletFactory.setCreator(this);
         }
 
         @Override
-        public Object createWebSocket(ServletUpgradeRequest servletUpgradeRequest, ServletUpgradeResponse servletUpgradeResponse) {
-            final URI requestURI = servletUpgradeRequest.getRequestURI();
-            final int port = servletUpgradeRequest.getLocalPort();
+        public Object createWebSocket(JettyServerUpgradeRequest JettyServerUpgradeRequest, JettyServerUpgradeResponse JettyServerUpgradeResponse) {
+            final URI requestURI = JettyServerUpgradeRequest.getRequestURI();
+            final int port = requestURI.getPort();
             final JettyWebSocketServer service = portToControllerService.get(port);
 
             if (service == null) {
@@ -257,7 +257,6 @@ public class JettyWebSocketServer extends AbstractJettyWebSocketService implemen
             return;
         }
 
-        configuredPolicy = WebSocketPolicy.newServerPolicy();
         configurePolicy(context, configuredPolicy);
 
         server = new Server();
@@ -265,7 +264,7 @@ public class JettyWebSocketServer extends AbstractJettyWebSocketService implemen
         final ContextHandlerCollection handlerCollection = new ContextHandlerCollection();
 
         final ServletContextHandler contextHandler = new ServletContextHandler();
-        // Set ClassLoader so that jetty-server classes are available to WebSocketServletFactory.Loader
+        // Set ClassLoader so that jetty-server classes are available to JettyWebSocketServletFactory.Loader
         contextHandler.setClassLoader(getClass().getClassLoader());
 
         // Add basic auth.
@@ -317,7 +316,7 @@ public class JettyWebSocketServer extends AbstractJettyWebSocketService implemen
         final ServerConnector serverConnector = createConnector(sslContextFactory, listenPort);
         server.setConnectors(new Connector[] {serverConnector});
 
-        servletHandler.addServletWithMapping(JettyWebSocketServlet.class, "/*");
+        servletHandler.addServletWithMapping(JettyJettyWebSocketServlet.class, "/*");
 
         getLogger().info("Starting JettyWebSocketServer on port {}.", new Object[]{listenPort});
         server.start();
@@ -340,7 +339,7 @@ public class JettyWebSocketServer extends AbstractJettyWebSocketService implemen
             httpsConfiguration.setSecureScheme("https");
             httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
             serverConnector = new ServerConnector(server,
-                    new SslConnectionFactory(sslContextFactory, "http/1.1"),
+                    new SslConnectionFactory((SslContextFactory.Server) sslContextFactory, "http/1.1"),
                     new HttpConnectionFactory(httpsConfiguration));
         }
         serverConnector.setPort(listenPort);

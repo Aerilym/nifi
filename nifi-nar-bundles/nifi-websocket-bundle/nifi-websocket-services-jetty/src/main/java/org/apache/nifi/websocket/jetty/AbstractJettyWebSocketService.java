@@ -67,7 +67,7 @@ public abstract class AbstractJettyWebSocketService extends AbstractWebSocketSer
 
 
     protected SslContextFactory createSslFactory(final SSLContextService sslService, final boolean needClientAuth, final boolean wantClientAuth, final String endpointIdentificationAlgorithm) {
-        final SslContextFactory sslFactory = new SslContextFactory.Server();
+        final SslContextFactory.Server sslFactory = new SslContextFactory.Server();
 
         sslFactory.setNeedClientAuth(needClientAuth);
         sslFactory.setWantClientAuth(wantClientAuth);

@@ -209,12 +209,12 @@ public class AtlasAPIV2ServerEmulator {
 
         server.setConnectors(new Connector[]{httpConnector});
 
-        servletHandler.addServletWithMapping(TypeDefsServlet.class, "/types/typedefs/");
-        servletHandler.addServletWithMapping(EntityBulkServlet.class, "/entity/bulk/");
-        servletHandler.addServletWithMapping(EntityGuidServlet.class, "/entity/guid/*");
-        servletHandler.addServletWithMapping(SearchByUniqueAttributeServlet.class, "/entity/uniqueAttribute/type/*");
-        servletHandler.addServletWithMapping(SearchBasicServlet.class, "/search/basic/");
-        servletHandler.addServletWithMapping(LineageServlet.class, "/debug/lineage/");
+        servletHandler.addServletWithMapping(String.valueOf(TypeDefsServlet.class), "/types/typedefs/");
+        servletHandler.addServletWithMapping(String.valueOf(EntityBulkServlet.class), "/entity/bulk/");
+        servletHandler.addServletWithMapping(String.valueOf(EntityGuidServlet.class), "/entity/guid/*");
+        servletHandler.addServletWithMapping(String.valueOf(SearchByUniqueAttributeServlet.class), "/entity/uniqueAttribute/type/*");
+        servletHandler.addServletWithMapping(String.valueOf(SearchBasicServlet.class), "/search/basic/");
+        servletHandler.addServletWithMapping(String.valueOf(LineageServlet.class), "/debug/lineage/");
 
         notificationServerEmulator = new AtlasNotificationServerEmulator();
     }

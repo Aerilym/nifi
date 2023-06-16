@@ -71,7 +71,7 @@ public class JettyITServerCustomizer implements WebServerFactoryCustomizer<Jetty
 
                 // build the connector with the endpoint identification algorithm set to null
                 final ServerConnector httpsConnector = new ServerConnector(server,
-                        new SslConnectionFactory(createSslContextFactory(sslProperties), "http/1.1"),
+                        new SslConnectionFactory((SslContextFactory.Server) createSslContextFactory(sslProperties), "http/1.1"),
                         new HttpConnectionFactory(httpsConfiguration));
                 server.removeConnector(con);
                 server.addConnector(httpsConnector);

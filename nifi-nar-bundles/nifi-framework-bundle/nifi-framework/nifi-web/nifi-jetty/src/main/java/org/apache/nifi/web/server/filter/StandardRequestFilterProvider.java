@@ -32,7 +32,7 @@ import org.springframework.security.web.header.writers.XContentTypeOptionsHeader
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter;
 
-import javax.servlet.Filter;
+import jakarta.servlet.Filter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

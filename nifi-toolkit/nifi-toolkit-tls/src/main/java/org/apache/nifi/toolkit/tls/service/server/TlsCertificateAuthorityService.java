@@ -62,7 +62,7 @@ public class TlsCertificateAuthorityService {
     private static Server createServer(Handler handler, int port, KeyStore keyStore, String keyPassword) throws Exception {
         Server server = new Server();
 
-        SslContextFactory sslContextFactory = new SslContextFactory.Server();
+        SslContextFactory.Server sslContextFactory = new SslContextFactory.Server();
         sslContextFactory.setIncludeProtocols(TlsConfiguration.getHighestCurrentSupportedTlsProtocolVersion());
         sslContextFactory.setKeyStore(keyStore);
         sslContextFactory.setKeyManagerPassword(keyPassword);

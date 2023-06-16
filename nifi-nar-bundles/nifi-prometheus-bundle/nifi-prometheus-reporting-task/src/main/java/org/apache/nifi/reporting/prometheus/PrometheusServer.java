@@ -19,6 +19,7 @@ package org.apache.nifi.reporting.prometheus;
 
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.exporter.common.TextFormat;
+import jakarta.servlet.Servlet;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.reporting.ReportingContext;
 import org.apache.nifi.ssl.SSLContextService;
@@ -86,7 +87,7 @@ public class PrometheusServer {
         metricsCollectors = Collections.emptyList();
         this.server = new Server(addr);
         this.handler = new ServletContextHandler(server, "/metrics");
-        this.handler.addServlet(new ServletHolder(new MetricsServlet()), "/");
+        this.handler.addServlet(new ServletHolder((Servlet) new MetricsServlet()), "/");
         try {
             this.server.start();
         } catch (Exception e) {
@@ -101,7 +102,7 @@ public class PrometheusServer {
         PrometheusServer.logger = logger;
         this.server = new Server();
         this.handler = new ServletContextHandler(server, "/metrics");
-        this.handler.addServlet(new ServletHolder(new MetricsServlet()), "/");
+        this.handler.addServlet(new ServletHolder((Servlet) new MetricsServlet()), "/");
 
         SslContextFactory sslFactory = createSslFactory(sslContextService, needClientAuth, wantClientAuth);
         HttpConfiguration httpsConfiguration = new HttpConfiguration();
@@ -109,7 +110,7 @@ public class PrometheusServer {
         httpsConfiguration.setSecurePort(addr);
         httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
 
-        ServerConnector https = new ServerConnector(server, new SslConnectionFactory(sslFactory, "http/1.1"),
+        ServerConnector https = new ServerConnector(server, new SslConnectionFactory((SslContextFactory.Server) sslFactory, "http/1.1"),
                 new HttpConnectionFactory(httpsConfiguration));
         https.setPort(addr);
         this.server.setConnectors(new Connector[]{https});
