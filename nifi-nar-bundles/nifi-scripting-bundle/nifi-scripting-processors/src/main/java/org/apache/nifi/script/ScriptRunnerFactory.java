@@ -26,6 +26,7 @@ import org.apache.nifi.script.impl.JavascriptScriptRunner;
 import org.apache.nifi.script.impl.JythonScriptRunner;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.Value;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
@@ -33,8 +34,7 @@ import javax.script.ScriptException;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 public class ScriptRunnerFactory {
 
@@ -46,6 +46,103 @@ public class ScriptRunnerFactory {
 
     public static ScriptRunnerFactory getInstance() {
         return INSTANCE;
+    }
+
+    public static Map transformMembers(Value v) {
+        Map map = new HashMap();
+        for (String key : v.getMemberKeys()) {
+            Value member = v.getMember(key);
+            if (member.hasArrayElements() && !member.isHostObject()) {
+                map.put(key, transformArray(member));
+            } else if (member.hasMembers() && !member.isHostObject()) {
+                map.put(key, transformMembers(member));
+            } else {
+                map.put(key, toObject(member));
+            }
+        }
+        return map;
+    }
+
+    public static List transformArray(Value v) {
+        List list = new ArrayList();
+        for (int i = 0; i < v.getArraySize(); ++i) {
+            Value element = v.getArrayElement(i);
+            if (element.hasArrayElements() && !element.isHostObject()) {
+                list.add(transformArray(element));
+            } else if (element.hasMembers() && !element.isHostObject()) {
+                list.add(transformMembers(element));
+            } else {
+                list.add(toObject(element));
+            }
+        }
+        return list;
+    }
+
+    public static Object toObject(Value v) {
+        if (v.isNull()) {
+            return null;
+        } else if (v.isHostObject()) {
+            return v.asHostObject();
+        } else if (v.isProxyObject()) {
+            return v.asProxyObject();
+        } else if (v.isBoolean()) {
+            return v.asBoolean();
+        } else if (v.isNumber()) {
+            if (v.fitsInByte()) {
+                return v.asByte();
+            }
+            if (v.fitsInShort()) {
+                return v.asShort();
+            }
+            if (v.fitsInInt()) {
+                return v.asInt();
+            }
+            if (v.fitsInLong()) {
+                return v.asLong();
+            }
+            if (v.fitsInFloat()) {
+                return v.asFloat();
+            }
+            if (v.fitsInDouble()) {
+                return v.asDouble();
+            }
+        } else if (v.isString()) {
+            return v.asString();
+        } else {
+            Value value = v.getMetaObject();
+            if (value.fitsInByte()) {
+                return value.asByte();
+            }
+            if (value.fitsInShort()) {
+                return value.asShort();
+            }
+            if (value.fitsInInt()) {
+                return value.asInt();
+            }
+            if (value.fitsInLong()) {
+                return value.asLong();
+            }
+            if (value.fitsInFloat()) {
+                return value.asFloat();
+            }
+            if (value.fitsInDouble()) {
+                return value.asDouble();
+            }
+            try {
+                return value.asBoolean();
+            } catch (Exception e) {
+                try {
+                    return value.asString();
+                } catch (Exception ex) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static Exception transformException(Value v) {
+        return v.throwException();
     }
 
     public ScriptRunner createScriptRunner(ScriptEngineFactory scriptEngineFactory, String scriptToRun, String[] modulePaths)
@@ -62,11 +159,54 @@ public class ScriptRunnerFactory {
             return new ClojureScriptRunner(scriptEngine, scriptToRun, null);
         }
         if ("ECMAScript".equals(scriptEngineName)) {
+            System.err.println("Logger Is Working");
+            HostAccess hostAccess = HostAccess.newBuilder(HostAccess.ALL)
+                    .allowPublicAccess(true)
+//                    .targetTypeMapping(
+//                            Value.class, Object.class,
+//                            (v) -> v.hasArrayElements(),
+//                            (v) -> transformArray(v)
+//                    )
+                    .targetTypeMapping(
+                            Value.class, List.class,
+                            (v) -> v.hasArrayElements(),
+                            (v) -> transformArray(v)
+                    )
+                    .targetTypeMapping(
+                            Value.class, Collection.class,
+                            (v) -> v.hasArrayElements(),
+                            (v) -> transformArray(v)
+                    )
+                    .targetTypeMapping(
+                            Value.class, Iterable.class,
+                            (v) -> v.hasArrayElements(),
+                            (v) -> transformArray(v)
+                    )
+//                    .targetTypeMapping(
+//                            Value.class, Object.class,
+//                            (v) -> {
+//                                System.err.println("Debugging client exception");
+//                                if (v.isProxyObject()){
+//                                    System.err.println("Class " + v.asProxyObject().getClass().getName());
+//                                }
+//                                return v.isException();
+//                            },
+//                            (v) -> transformException(v)
+//                    )
+                    .build();
+
             ScriptEngine engine = GraalJSScriptEngine.create(null,
                     Context.newBuilder("js")
-                            .allowHostAccess(HostAccess.ALL)
+                            .allowHostAccess(hostAccess)
                             .allowHostClassLookup(s -> true)
-                            .option("js.ecmascript-version", "2022"));
+                            .allowExperimentalOptions(true)
+                            .option("js.ecmascript-version", "2022")
+                            .option("js.scripting", "true")
+                            .option("js.nashorn-compat", "true")
+            );
+
+            engine.put("script", scriptToRun);
+
             return new JavascriptScriptRunner(engine, scriptToRun, null);
         }
         return new GenericScriptRunner(scriptEngine, scriptToRun, null);
