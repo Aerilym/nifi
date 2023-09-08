@@ -147,7 +147,7 @@
         <h2.version>2.1.214</h2.version>
         <zookeeper.version>3.8.1</zookeeper.version>
         <caffeine.version>3.1.6</caffeine.version>
-        <graalvm.version>22.1.0</graalvm.version>
+        <graalvm.version>23.0.1</graalvm.version>
         <compiler.dir>${project.build.directory}/compiler</compiler.dir>
     </properties>
     <dependencyManagement>
